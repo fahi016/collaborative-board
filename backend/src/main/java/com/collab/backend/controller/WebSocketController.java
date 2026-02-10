@@ -13,6 +13,7 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
 
 import java.util.List;
@@ -39,16 +40,18 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}/users")
     public UserMessage handleUserJoin(
             @DestinationVariable String roomId,
-            UserMessage message
+            UserMessage message,
+            StompHeaderAccessor accessor
     ){
         logger.info("User joining room {}: {}", roomId, message.getUserName());
 
         try{
+            String simpSessionId = accessor.getSessionId();
             // Add user to room
             JoinRoomResponse response = userService.joinRoom(
                     roomId,
                     message.getUserName(),
-                    message.getSessionId()
+                    simpSessionId
             );
 
             UserMessage joinMessage = new UserMessage(

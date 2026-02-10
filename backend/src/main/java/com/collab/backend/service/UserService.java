@@ -89,6 +89,20 @@ public class UserService {
         }
     }
 
+
+    public void removeUserBySimpSessionId(String simpSessionId) {
+        Optional<ActiveUser> userOpt =
+                repository.findBySessionId(simpSessionId);
+
+        if (userOpt.isPresent()) {
+            ActiveUser user = userOpt.get();
+            String roomId = user.getRoom().getRoomId();
+
+            repository.delete(user);
+            roomService.decrementUserCount(roomId);
+        }
+    }
+
     /**
      * Get active users in a room
      */

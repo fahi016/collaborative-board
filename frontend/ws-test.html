@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WS Test</title>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<script>
+    const socket = new SockJS("http://localhost:8080/ws");
+    const stompClient = Stomp.over(socket);
+
+    stompClient.connect({}, () => {
+      console.log("CONNECTED TO BACKEND ✅");
+
+      stompClient.subscribe("/topic/test", msg => {
+        console.log("Received:", msg.body);
+      });
+
+      stompClient.subscribe("/topic/room/955891/users", message => {
+  console.log("USERS TOPIC:", message.body);
+});
+
+stompClient.subscribe("/topic/room/955891", message => {
+  console.log("BOARD TOPIC:", message.body);
+});
+
+
+      stompClient.send(
+  "/app/room/955891/join",
+  {},
+  JSON.stringify({
+    userName: "annu"
+  })
+
+);
+
+
+    }, error => {
+      console.error("STOMP ERROR ❌", error);
+    });
+</script>
+</body>
+</html>

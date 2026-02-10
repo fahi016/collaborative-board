@@ -26,7 +26,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         // Register STOMP endpoint that clients will connect to
         registry.addEndpoint("/ws")
-                .setAllowedOrigins("http://localhost:5173", "http://localhost:3000")
+//                .setAllowedOrigins("http://localhost:5173", "http://localhost:3000")
+                .setAllowedOriginPatterns("*")
                 .withSockJS();
     }
 
