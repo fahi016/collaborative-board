@@ -15,6 +15,14 @@ public class UserMessage {
     private String color;
     private Long timestamp;
 
+    public UserMessage(String type, String userName, String sessionId, String color) {
+        this.type = type;
+        this.userName = userName;
+        this.sessionId = sessionId;
+        this.color = color;
+        this.timestamp = System.currentTimeMillis();
+    }
+
     public UserMessage() {
         this.timestamp = System.currentTimeMillis();
     }

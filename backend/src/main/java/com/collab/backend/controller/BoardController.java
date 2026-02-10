@@ -1,4 +1,4 @@
-package com.collab.board.controller;
+package com.collab.backend.controller;
 
 import com.collab.backend.dto.*;
 import com.collab.backend.model.BoardState;

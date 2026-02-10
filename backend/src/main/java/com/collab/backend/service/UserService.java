@@ -64,8 +64,7 @@ public class UserService {
         ActiveUser user = new ActiveUser(room, userName, sessionId, color);
         repository.save(user);
 
-        // Increment room user count
-        room.incrementUsersCount();
+        room.incrementUserCount();
 
         return new JoinRoomResponse(
                 true,
@@ -86,7 +85,7 @@ public class UserService {
             Room room = user.getRoom();
 
             repository.delete(user);
-            room.decrementUsersCount();
+            room.decrementUserCount();
         }
     }
 
