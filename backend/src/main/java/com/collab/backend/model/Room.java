@@ -6,7 +6,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
@@ -35,11 +34,18 @@ public class Room {
         this.createdAt = LocalDateTime.now();
     }
 
+    public Room(String roomId) {
+        this.roomId = roomId;
+        this.createdAt = LocalDateTime.now();
+        this.maxUsers = 3;
+        this.currentUsers = 0;
+    }
+
     //Helper methods
-    public void incrementUsersCount(){
+    public void incrementUserCount(){
         this.currentUsers++;
     }
-    public void decrementUsersCount(){
+    public void decrementUserCount(){
         if (this.currentUsers > 0) {
             this.currentUsers--;
         }
@@ -47,4 +53,6 @@ public class Room {
     public boolean isFull() {
         return this.currentUsers >= this.maxUsers;
     }
+
+
 }

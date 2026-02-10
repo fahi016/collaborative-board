@@ -37,4 +37,13 @@ public class BoardState {
         this.updatedAt = LocalDateTime.now();
     }
 
+    public BoardState(Room room, String canvasData) {
+        this.room = room;
+        this.canvasData = canvasData;
+        this.pageNumber = 1;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+
+
 }

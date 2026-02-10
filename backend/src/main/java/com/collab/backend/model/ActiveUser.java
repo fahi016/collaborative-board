@@ -2,7 +2,17 @@ package com.collab.backend.model;
 
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.LocalDateTime;
+
+@Getter
+@Setter
+@AllArgsConstructor
+@Entity
+@Table(name = "active_user")
 public class ActiveUser {
 
     @Id
@@ -27,6 +37,13 @@ public class ActiveUser {
 
     // Constructors
     public ActiveUser() {
+        this.joinedAt = LocalDateTime.now();
+    }
+    public ActiveUser(Room room, String userName, String sessionId, String color) {
+        this.room = room;
+        this.userName = userName;
+        this.sessionId = sessionId;
+        this.color = color;
         this.joinedAt = LocalDateTime.now();
     }
 }
