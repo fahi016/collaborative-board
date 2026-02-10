@@ -48,6 +48,11 @@ public class RoomService {
         Room room = getRoomById(roomId);
         return room.isFull();
     }
+    public Room getRoomByIdForUpdate(String roomId) {
+        return repository.findByRoomIdForUpdate(roomId)
+                .orElseThrow(() -> new RoomNotFoundException("Room not found"));
+    }
+
 
     public void incrementUserCount(String roomId) {
         Room room = getRoomById(roomId);
