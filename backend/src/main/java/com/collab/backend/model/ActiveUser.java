@@ -28,6 +28,11 @@ public class ActiveUser {
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;
 
+    // Link to authenticated user (optional for backward compatibility)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
     @Column(name = "user_name", length = 50, nullable = false)
     private String userName;
 
@@ -44,11 +49,29 @@ public class ActiveUser {
     public ActiveUser() {
         this.joinedAt = LocalDateTime.now();
     }
+
     public ActiveUser(Room room, String userName, String sessionId, String color) {
         this.room = room;
         this.userName = userName;
         this.sessionId = sessionId;
         this.color = color;
         this.joinedAt = LocalDateTime.now();
+    }
+
+    // NEW: Constructor with User
+    public ActiveUser(Room room, User user, String sessionId, String color) {
+        this.room = room;
+        this.user = user;
+        this.userName = user.getName();
+        this.sessionId = sessionId;
+        this.color = color;
+        this.joinedAt = LocalDateTime.now();
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+        if (user != null) {
+            this.userName = user.getName();
+        }
     }
 }

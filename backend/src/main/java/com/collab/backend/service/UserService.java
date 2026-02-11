@@ -4,6 +4,7 @@ import com.collab.backend.dto.JoinRoomResponse;
 import com.collab.backend.exception.RoomFullException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
+import com.collab.backend.model.User;
 import com.collab.backend.repository.ActiveUserRepository;
 import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
@@ -71,6 +72,30 @@ public class UserService {
                 user.getColor(),
                 user.getSessionId()
         );
+    }
+
+    /**
+     * NEW: Add authenticated user to room
+     */
+    public ActiveUser addUserToRoom(String roomId, User user, String sessionId) {
+        Room room = roomService.getRoomById(roomId);
+
+        // Check if user already exists in room
+        Optional<ActiveUser> existingUser = repository.findByRoomAndSessionId(room, sessionId);
+        if (existingUser.isPresent()) {
+            return existingUser.get();
+        }
+
+        // Generate random color for user
+        String color = generateUserColor();
+
+        ActiveUser activeUser = new ActiveUser(room, user, sessionId, color);
+        repository.save(activeUser);
+
+        // Increment room user count
+        roomService.incrementUserCount(roomId);
+
+        return activeUser;
     }
 
 

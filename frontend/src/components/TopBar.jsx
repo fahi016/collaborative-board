@@ -1,8 +1,16 @@
 // src/components/TopBar.jsx
+import { useToast } from '../context/ToastContext';
+
 function TopBar({ roomId, userName, onExit, connected }) {
-  const copyRoomId = () => {
-    navigator.clipboard.writeText(roomId);
-    alert(`Room ID ${roomId} copied to clipboard!`);
+  const { showToast } = useToast();
+
+  const copyRoomId = async () => {
+    try {
+      await navigator.clipboard.writeText(roomId);
+      showToast(`Room ID ${roomId} copied to clipboard!`, 'success');
+    } catch (e) {
+      showToast('Failed to copy Room ID', 'error');
+    }
   };
 
   return (
