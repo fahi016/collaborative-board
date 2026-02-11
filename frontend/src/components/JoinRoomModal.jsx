@@ -46,10 +46,25 @@ function JoinRoomModal({ onJoinRoom }) {
     setError('');
 
     try {
-      // ✅ Optional: validate room exists (REST read-only)
-      await api.getRoomInfo(roomIdInput.toUpperCase());
+      // ✅ Validate room exists and is NOT full before joining
+      const info = await api.getRoomInfo(roomIdInput.toUpperCase());
 
-      // ✅ Move to board (NO REST JOIN)
+      const currentUsers = info.currentUsers ?? info.currentusers;
+      const maxUsers = info.maxUsers ?? info.maxusers;
+      const isFullFlag = info.isFull ?? info.full;
+
+      const isRoomFull =
+        Boolean(isFullFlag) ||
+        (typeof currentUsers === 'number' &&
+          typeof maxUsers === 'number' &&
+          currentUsers >= maxUsers);
+
+      if (isRoomFull) {
+        setError('This room is full (max 3 users).');
+        return;
+      }
+
+      // ✅ Move to board only when backend says room is not full
       onJoinRoom(roomIdInput.toUpperCase(), userName);
     } catch (err) {
       setError(err.message || 'Room not found');

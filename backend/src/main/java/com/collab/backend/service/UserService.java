@@ -32,15 +32,13 @@ public class UserService {
      */
     public JoinRoomResponse joinRoom(String roomId, String userName, String sessionId) {
 
-        // Generate session ID if missing
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
         }
 
-        // Fetch room with lock (RoomService must ensure locking)
+        // LOCK the row properly
         Room room = roomService.getRoomByIdForUpdate(roomId);
 
-        // Check if user already exists in room
         Optional<ActiveUser> existingUser =
                 repository.findByRoomAndSessionId(room, sessionId);
 
@@ -54,17 +52,18 @@ public class UserService {
             );
         }
 
-        // Check room capacity
         if (room.isFull()) {
             throw new RoomFullException("Room is full");
         }
 
-        // Create new user
+        room.incrementUserCount();
+
+        roomService.save(room);
+
+        // ✅ THEN create user
         String color = generateUserColor();
         ActiveUser user = new ActiveUser(room, userName, sessionId, color);
         repository.save(user);
-
-        room.incrementUserCount();
 
         return new JoinRoomResponse(
                 true,
@@ -73,6 +72,7 @@ public class UserService {
                 user.getSessionId()
         );
     }
+
 
     /**
      * Remove user from room
