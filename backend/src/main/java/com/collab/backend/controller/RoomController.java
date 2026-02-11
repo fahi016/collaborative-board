@@ -53,17 +53,17 @@ public class RoomController {
      * Join a room
      * POST /api/rooms/{roomId}/join
      */
-    @PostMapping("/{roomId}/join")
-    public ResponseEntity<JoinRoomResponse> joinRoom(
-            @PathVariable String roomId,
-            @RequestBody JoinRoomRequest request,
-            @RequestHeader(value = "Session-Id", required = false) String sessionId
-    ) {
-        JoinRoomResponse response =
-                userService.joinRoom(roomId, request.getUserName(), sessionId);
-
-        return ResponseEntity.ok(response);
-    }
+//    @PostMapping("/{roomId}/join")
+//    public ResponseEntity<JoinRoomResponse> joinRoom(
+//            @PathVariable String roomId,
+//            @RequestBody JoinRoomRequest request,
+//            @RequestHeader(value = "Session-Id", required = false) String sessionId
+//    ) {
+//        JoinRoomResponse response =
+//                userService.joinRoom(roomId, request.getUserName(), sessionId);
+//
+//        return ResponseEntity.ok(response);
+//    }
 
     /**
      * Get active users in a room
