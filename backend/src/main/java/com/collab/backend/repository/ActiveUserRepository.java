@@ -40,4 +40,8 @@ public interface ActiveUserRepository extends JpaRepository<ActiveUser, Long> {
      * Count users in a room
      */
     long countByRoom(Room room);
+
+    boolean existsByRoom_RoomIdAndUserName(String roomId, String username);
+
+    boolean existsByRoom_RoomIdAndSessionId(String roomId, String sessionId);
 }

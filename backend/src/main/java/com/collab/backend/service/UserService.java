@@ -6,6 +6,7 @@ import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
 import com.collab.backend.model.User;
 import com.collab.backend.repository.ActiveUserRepository;
+import com.collab.backend.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,7 @@ public class UserService {
     /**
      * Join a room (atomic & safe)
      */
-    public JoinRoomResponse joinRoom(String roomId, String userName, String sessionId) {
+    public JoinRoomResponse joinAuthenticatedUser(String roomId, String userName, String sessionId) {
 
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
@@ -61,7 +62,7 @@ public class UserService {
 
         roomService.save(room);
 
-        // ✅ THEN create user
+        // THEN create user
         String color = generateUserColor();
         ActiveUser user = new ActiveUser(room, userName, sessionId, color);
         repository.save(user);
@@ -74,29 +75,6 @@ public class UserService {
         );
     }
 
-    /**
-     * NEW: Add authenticated user to room
-     */
-    public ActiveUser addUserToRoom(String roomId, User user, String sessionId) {
-        Room room = roomService.getRoomById(roomId);
-
-        // Check if user already exists in room
-        Optional<ActiveUser> existingUser = repository.findByRoomAndSessionId(room, sessionId);
-        if (existingUser.isPresent()) {
-            return existingUser.get();
-        }
-
-        // Generate random color for user
-        String color = generateUserColor();
-
-        ActiveUser activeUser = new ActiveUser(room, user, sessionId, color);
-        repository.save(activeUser);
-
-        // Increment room user count
-        roomService.incrementUserCount(roomId);
-
-        return activeUser;
-    }
 
 
     /**
@@ -110,7 +88,7 @@ public class UserService {
             Room room = user.getRoom();
 
             repository.delete(user);
-            room.decrementUserCount();
+            roomService.decrementUserCount(room.getRoomId());
         }
     }
 
@@ -139,4 +117,15 @@ public class UserService {
         Random random = new Random();
         return COLORS[random.nextInt(COLORS.length)];
     }
+
+    public boolean isUserInRoom(String roomId, String username) {
+
+        return repository.existsByRoom_RoomIdAndUserName(roomId, username);
+    }
+
+    public boolean isSessionInRoom(String roomId, String sessionId) {
+        return repository.existsByRoom_RoomIdAndSessionId(roomId, sessionId);
+    }
+
+
 }

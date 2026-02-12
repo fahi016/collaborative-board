@@ -16,6 +16,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -40,31 +41,32 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}/users")
     public UserMessage handleUserJoin(
             @DestinationVariable String roomId,
-            UserMessage message,
+            Principal principal,
             StompHeaderAccessor accessor
     ){
-        logger.info("User joining room {}: {}", roomId, message.getUserName());
+        logger.info("User joining room {}: {}", roomId, principal.getName());
 
         try{
-            String simpSessionId = accessor.getSessionId();
+            String username = principal.getName();
+            String sessionId = accessor.getSessionId();
             // Add user to room
-            JoinRoomResponse response = userService.joinRoom(
+            JoinRoomResponse response = userService.joinAuthenticatedUser(
                     roomId,
-                    message.getUserName(),
-                    simpSessionId
+                    principal.getName(),
+                    sessionId
             );
 
-            UserMessage joinMessage = new UserMessage(
+
+
+            // Also send updated user list
+            sendUserList(roomId);
+
+            return new UserMessage(
                     "join",
                     response.getUserName(),
                     response.getSessionId(),
                     response.getUserColor()
             );
-
-            // Also send updated user list
-            sendUserList(roomId);
-
-            return joinMessage;
 
         } catch (Exception e) {
             logger.error("Error handling user join", e);
@@ -81,20 +83,27 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}/users")
     public UserMessage handleUserLeave(
             @DestinationVariable String roomId,
-            UserMessage message
+            Principal principal,
+            StompHeaderAccessor accessor
+
     ){
 
-        logger.info("User leaving room {}: {}", roomId, message.getUserName());
+        logger.info("User leaving room {}: {}", roomId, principal.getName());
         try{
+
+            String sessionId = accessor.getSessionId();
+            String username = principal.getName();
+
             // Remove user from room
-            userService.removeUserFromRoom(message.getSessionId());
+
+            userService.removeUserFromRoom(sessionId);
 
 
             // Prepare leave message
             UserMessage leaveMessage = new UserMessage(
                     "leave",
-                    message.getUserName(),
-                    message.getSessionId(),
+                    principal.getName(),
+                    sessionId,
                     null
             );
             // Also send updated user list
@@ -118,20 +127,26 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}")
     public BoardActionMessage handleDraw(
             @DestinationVariable String roomId,
-            BoardActionMessage message
+            BoardActionMessage message,
+            Principal principal,
+            StompHeaderAccessor accessor
     ) {
-        logger.debug("Draw action in room {}", roomId);
 
-        try {
-            // Optionally persist the action (can be debounced on client side)
-            // boardService.appendActionToBoardState(roomId, 1, message.getData());
-
-            return message;
-        } catch (Exception e) {
-            logger.error("Error handling draw action", e);
-            throw e;
+        if (principal == null) {
+            throw new IllegalStateException("Unauthenticated user");
         }
+
+        String sessionId = accessor.getSessionId();
+
+        if (!userService.isSessionInRoom(roomId, sessionId)) {
+            throw new IllegalStateException("User not in room");
+        }
+
+        logger.debug("Draw action in room {} by {}", roomId, principal.getName());
+
+        return message;
     }
+
 
     /**
      * Handle text action
@@ -142,20 +157,27 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}")
     public BoardActionMessage handleText(
             @DestinationVariable String roomId,
-            BoardActionMessage message
+            BoardActionMessage message,
+            Principal principal,
+            StompHeaderAccessor accessor
     ) {
-        logger.debug("Text action in room {}", roomId);
 
-        try {
-            // Optionally persist the action
-            // boardService.appendActionToBoardState(roomId, 1, message.getData());
-
-            return message;
-        } catch (Exception e) {
-            logger.error("Error handling text action", e);
-            throw e;
+        if (principal == null) {
+            throw new IllegalStateException("Unauthenticated user");
         }
+
+        String sessionId = accessor.getSessionId();
+
+        if (!userService.isSessionInRoom(roomId, sessionId)) {
+            throw new IllegalStateException("User not in room");
+        }
+
+        logger.debug("Text action in room {} by {}", roomId, principal.getName());
+
+        return message;
     }
+
+
 
     /**
      * Handle erase action
@@ -166,20 +188,27 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}")
     public BoardActionMessage handleErase(
             @DestinationVariable String roomId,
-            BoardActionMessage message
+            BoardActionMessage message,
+            Principal principal,
+            StompHeaderAccessor accessor
     ) {
-        logger.debug("Erase action in room {}", roomId);
 
-        try {
-            // Optionally persist the action
-            // boardService.appendActionToBoardState(roomId, 1, message.getData());
-
-            return message;
-        } catch (Exception e) {
-            logger.error("Error handling erase action", e);
-            throw e;
+        if (principal == null) {
+            throw new IllegalStateException("Unauthenticated user");
         }
+
+        String sessionId = accessor.getSessionId();
+
+        if (!userService.isSessionInRoom(roomId, sessionId)) {
+            throw new IllegalStateException("User not in room");
+        }
+
+        logger.debug("Erase action in room {} by {}", roomId, principal.getName());
+
+        return message;
     }
+
+
     private void sendUserList(String roomId) {
         try {
             List<ActiveUser> users = userService.getUsersInRoom(roomId);
