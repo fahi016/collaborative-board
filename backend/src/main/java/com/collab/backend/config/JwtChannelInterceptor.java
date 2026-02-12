@@ -8,6 +8,7 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,13 @@ public class JwtChannelInterceptor implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel){
 
-        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        // Use MessageHeaderAccessor so that header/user changes are preserved
+        StompHeaderAccessor accessor =
+                MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        if (accessor == null) {
+            return message;
+        }
 
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
 
@@ -51,6 +58,8 @@ public class JwtChannelInterceptor implements ChannelInterceptor {
                     );
 
             accessor.setUser(authentication);
+            // Ensure the modified headers (including simpUser) are kept
+            accessor.setLeaveMutable(true);
         }
 
         return message;

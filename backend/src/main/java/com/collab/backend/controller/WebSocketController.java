@@ -44,6 +44,11 @@ public class WebSocketController {
             Principal principal,
             StompHeaderAccessor accessor
     ){
+        if (principal == null) {
+            logger.warn("Unauthenticated user attempted to join room {}", roomId);
+            throw new IllegalStateException("Unauthenticated user");
+        }
+
         logger.info("User joining room {}: {}", roomId, principal.getName());
 
         try{

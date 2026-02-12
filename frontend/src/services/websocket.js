@@ -15,8 +15,20 @@ class WebSocketService {
   connect(onConnected) {
     if (this.connected) return;
 
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      console.error(
+        '❌ Cannot establish WebSocket connection: missing auth token. Please log in again.',
+      );
+      return;
+    }
+
     this.client = new Client({
       webSocketFactory: () => new SockJS(WS_URL),
+      connectHeaders: {
+        Authorization: `Bearer ${token}`,
+      },
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
