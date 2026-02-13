@@ -3,9 +3,13 @@ package com.collab.backend.controller;
 import com.collab.backend.dto.*;
 import com.collab.backend.model.BoardState;
 import com.collab.backend.service.BoardService;
+import com.collab.backend.service.UserService;
+import com.collab.backend.service.AuthService;
 import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.AccessDeniedException;
+import jakarta.validation.Valid;
 
 @RestController
 @AllArgsConstructor
@@ -13,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 public class BoardController {
 
     private final BoardService boardService;
+    private final UserService userService;
+    private final AuthService authService;
 
     /**
      * Get board state for a room
@@ -23,6 +29,8 @@ public class BoardController {
             @PathVariable String roomId,
             @RequestParam(defaultValue = "1") Integer pageNumber
     ) {
+        ensureCurrentUserInRoom(roomId);
+
         BoardState boardState = boardService.getBoardState(roomId, pageNumber);
 
         BoardStateResponse response = new BoardStateResponse(
@@ -41,8 +49,10 @@ public class BoardController {
     @PutMapping
     public ResponseEntity<SuccessResponse> updateBoardState(
             @PathVariable String roomId,
-            @RequestBody UpdateBoardStateRequest request
+            @Valid @RequestBody UpdateBoardStateRequest request
     ) {
+        ensureCurrentUserInRoom(roomId);
+
         boardService.updateBoardState(
                 roomId,
                 request.getPageNumber(),
@@ -61,7 +71,24 @@ public class BoardController {
             @PathVariable String roomId,
             @RequestParam(defaultValue = "1") Integer pageNumber
     ) {
+        ensureCurrentUserInRoom(roomId);
+
         boardService.clearBoardState(roomId, pageNumber);
         return ResponseEntity.ok(new SuccessResponse(true));
+    }
+
+    /**
+     * Ensure the authenticated user is an active member of the given room.
+     * This prevents authenticated users from accessing or mutating boards for rooms
+     * they have not joined.
+     */
+    private void ensureCurrentUserInRoom(String roomId) {
+        var currentUser = authService.getCurrentUser();
+        String username = currentUser.getEmail();
+
+        boolean inRoom = userService.isUserInRoom(roomId, username);
+        if (!inRoom) {
+            throw new AccessDeniedException("User is not a member of room " + roomId);
+        }
     }
 }

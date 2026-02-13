@@ -7,6 +7,7 @@ import com.collab.backend.model.ActiveUser;
 import com.collab.backend.service.BoardRedisService;
 import com.collab.backend.service.BoardService;
 import com.collab.backend.service.UserService;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +21,6 @@ import org.springframework.stereotype.Controller;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 
@@ -48,10 +48,8 @@ public class WebSocketController {
             Principal principal,
             StompHeaderAccessor accessor
     ){
-        if (principal == null) {
-            logger.warn("Unauthenticated user attempted to join room {}", roomId);
-            throw new IllegalStateException("Unauthenticated user");
-        }
+        validatePrincipal(principal);
+        validateRoomId(roomId);
 
         logger.info("User joining room {}: {}", roomId, principal.getName());
 
@@ -119,6 +117,9 @@ public class WebSocketController {
 
     ){
 
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+
         logger.info("User leaving room {}: {}", roomId, principal.getName());
         try{
 
@@ -158,14 +159,13 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}")
     public BoardActionMessage handleDraw(
             @DestinationVariable String roomId,
-            BoardActionMessage message,
+            @Valid BoardActionMessage message,
             Principal principal,
             StompHeaderAccessor accessor
     ) {
 
-        if (principal == null) {
-            throw new IllegalStateException("Unauthenticated user");
-        }
+        validatePrincipal(principal);
+        validateRoomId(roomId);
 
         String sessionId = accessor.getSessionId();
 
@@ -190,14 +190,13 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}")
     public BoardActionMessage handleText(
             @DestinationVariable String roomId,
-            BoardActionMessage message,
+            @Valid BoardActionMessage message,
             Principal principal,
             StompHeaderAccessor accessor
     ) {
 
-        if (principal == null) {
-            throw new IllegalStateException("Unauthenticated user");
-        }
+        validatePrincipal(principal);
+        validateRoomId(roomId);
 
         String sessionId = accessor.getSessionId();
 
@@ -223,14 +222,13 @@ public class WebSocketController {
     @SendTo("/topic/room/{roomId}")
     public BoardActionMessage handleErase(
             @DestinationVariable String roomId,
-            BoardActionMessage message,
+            @Valid BoardActionMessage message,
             Principal principal,
             StompHeaderAccessor accessor
     ) {
 
-        if (principal == null) {
-            throw new IllegalStateException("Unauthenticated user");
-        }
+        validatePrincipal(principal);
+        validateRoomId(roomId);
 
         String sessionId = accessor.getSessionId();
 
@@ -271,5 +269,15 @@ public class WebSocketController {
         }
     }
 
+    private void validatePrincipal(Principal principal) {
+        if (principal == null) {
+            throw new IllegalStateException("Unauthenticated user");
+        }
+    }
 
+    private void validateRoomId(String roomId) {
+        if (roomId == null || roomId.isBlank() || roomId.length() > 36) {
+            throw new IllegalArgumentException("Invalid roomId");
+        }
+    }
 }

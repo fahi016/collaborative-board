@@ -23,7 +23,19 @@ public class CorsConfig {
                         "http://localhost:5500"
                 )
         );
-        config.addAllowedHeader("*");
+
+        // Restrict allowed and exposed headers for better security
+        config.setAllowedHeaders(Arrays.asList(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Origin",
+                "X-Requested-With"
+        ));
+
+        config.setExposedHeaders(Arrays.asList(
+                "Authorization"
+        ));
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 

@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 function JoinRoomModal({ onJoinRoom }) {
-  const [userName, setUserName] = useState('');
   const [roomIdInput, setRoomIdInput] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
@@ -13,9 +12,42 @@ function JoinRoomModal({ onJoinRoom }) {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
 
+   const [activeRoomInfo, setActiveRoomInfo] = useState(null);
+
+   // Keep local active room info in sync with localStorage,
+   // so other tabs see the same state.
+   useEffect(() => {
+     const loadActiveRoom = () => {
+       try {
+         const raw = localStorage.getItem('activeRoom');
+         setActiveRoomInfo(raw ? JSON.parse(raw) : null);
+       } catch {
+         setActiveRoomInfo(null);
+       }
+     };
+
+     loadActiveRoom();
+
+     const handleStorage = (event) => {
+       if (event.key === 'activeRoom') {
+         loadActiveRoom();
+       }
+     };
+
+     window.addEventListener('storage', handleStorage);
+     return () => window.removeEventListener('storage', handleStorage);
+   }, []);
+
+   const isUserAlreadyActive =
+     !!activeRoomInfo && activeRoomInfo.userEmail === user?.email;
+
   const handleCreateRoom = async () => {
-    if (!userName.trim()) {
-      setError('Please enter your name');
+    // Frontend guard: same authenticated user should not
+    // create/join another room from a different tab/window.
+    if (isUserAlreadyActive) {
+      const msg = `You are already active in room ${activeRoomInfo.roomId} in another tab. Please close that tab or reset your status before creating a new room.`;
+      setError(msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -29,7 +61,8 @@ function JoinRoomModal({ onJoinRoom }) {
       showToast(`Room ${roomData.roomId} created`, 'success');
 
       // Move directly to board; WebSocket will handle presence/join
-      onJoinRoom(roomData.roomId, userName);
+      // Use authenticated user's name so backend can enforce "one room per user"
+      onJoinRoom(roomData.roomId, user?.name || '');
     } catch (err) {
       const msg = err.message || 'Failed to create room';
       setError(msg);
@@ -40,13 +73,17 @@ function JoinRoomModal({ onJoinRoom }) {
   };
 
   const handleJoinRoom = async () => {
-    if (!userName.trim()) {
-      setError('Please enter your name');
+    if (!roomIdInput.trim()) {
+      setError('Please enter room ID');
       return;
     }
 
-    if (!roomIdInput.trim()) {
-      setError('Please enter room ID');
+    // Frontend guard: same authenticated user should not
+    // join another room (or same room) in a different tab.
+    if (isUserAlreadyActive) {
+      const msg = `You are already active in room ${activeRoomInfo.roomId} in another tab. Please close that tab or reset your status before joining a room.`;
+      setError(msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -75,7 +112,8 @@ function JoinRoomModal({ onJoinRoom }) {
       }
 
       // Move to board; WebSocket join will be done in CollaborativeBoard
-      onJoinRoom(roomIdInput.toUpperCase(), userName);
+      // Use authenticated user's name so backend can enforce "one room per user"
+      onJoinRoom(roomIdInput.toUpperCase(), user?.name || '');
       showToast(`Joined room ${roomIdInput.toUpperCase()}`, 'success');
     } catch (err) {
       const msg = err.message || 'Failed to join room';
@@ -109,20 +147,8 @@ function JoinRoomModal({ onJoinRoom }) {
           </button>
         </div>
 
-        {/* Name input */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Your Name
-          </label>
-          <input
-            type="text"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            placeholder="Enter your display name"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            maxLength={50}
-          />
-        </div>
+
+        {/* Name is now fixed to authenticated user to enforce one-room-per-user */}
 
         {/* Create or Join Toggle */}
         <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
@@ -156,9 +182,9 @@ function JoinRoomModal({ onJoinRoom }) {
               type="text"
               value={roomIdInput}
               onChange={(e) => setRoomIdInput(e.target.value.toUpperCase())}
-              placeholder="Enter 6-character room ID"
+              placeholder="Enter 10-character room ID"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
-              maxLength={6}
+              maxLength={10}
             />
           </div>
         )}

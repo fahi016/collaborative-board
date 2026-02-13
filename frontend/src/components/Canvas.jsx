@@ -226,7 +226,7 @@ const Canvas = forwardRef(({ tool, color, userColor, onAction }, ref) => {
 
   const handleTextTool = (e) => {
     const pos = getMousePos(e);
-    const text = prompt('Enter text:');
+    const text = window.prompt('Enter text:');
 
     if (text && text.trim()) {
       const action = {
@@ -240,10 +240,7 @@ const Canvas = forwardRef(({ tool, color, userColor, onAction }, ref) => {
         },
       };
 
-      // Add to local actions
       setActions((prev) => [...prev, action]);
-
-      // Send to server
       onAction(action);
     }
   };

@@ -10,10 +10,13 @@ class WebSocketService {
     this.connected = false;
     this.subscriptions = new Map();
     this.joinedRooms = new Set();
+    this.errorHandler = null;
   }
 
-  connect(onConnected) {
+  connect(onConnected, onError) {
     if (this.connected) return;
+
+    this.errorHandler = onError || null;
 
     const token = localStorage.getItem('token');
 
@@ -42,7 +45,31 @@ class WebSocketService {
       onWebSocketClose: () => {
         console.warn('⚠️ WebSocket closed');
         this.connected = false;
+        this.subscriptions.forEach(sub => sub.unsubscribe());
+        this.subscriptions.clear();
         this.joinedRooms.clear();
+      },
+
+      onStompError: (frame) => {
+        console.error('❌ STOMP error', frame.body);
+        this.connected = false;
+        this.subscriptions.forEach(sub => sub.unsubscribe());
+        this.subscriptions.clear();
+        this.joinedRooms.clear();
+        if (this.errorHandler) {
+          this.errorHandler(frame.body || 'WebSocket error');
+        }
+      },
+
+      onWebSocketError: (event) => {
+        console.error('❌ WebSocket error', event);
+        this.connected = false;
+        this.subscriptions.forEach(sub => sub.unsubscribe());
+        this.subscriptions.clear();
+        this.joinedRooms.clear();
+        if (this.errorHandler) {
+          this.errorHandler('WebSocket connection error');
+        }
       },
 
       debug: (msg) => console.log('[STOMP]', msg),
@@ -67,9 +94,14 @@ class WebSocketService {
   subscribe(destination, callback) {
     if (!this.connected || this.subscriptions.has(destination)) return;
 
-    const sub = this.client.subscribe(destination, msg =>
-      callback(JSON.parse(msg.body))
-    );
+    const sub = this.client.subscribe(destination, msg => {
+      try {
+        const parsed = JSON.parse(msg.body);
+        callback(parsed);
+      } catch (e) {
+        console.error('Failed to parse WebSocket message', e, msg.body);
+      }
+    });
 
     this.subscriptions.set(destination, sub);
   }

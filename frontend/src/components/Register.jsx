@@ -54,9 +54,9 @@ function Register({ onSwitchToLogin }) {
             showToast('Account created successfully', 'success');
             // AuthContext will handle navigation
         } catch (err) {
-            const msg = err || 'Registration failed';
+            const msg = typeof err === 'string' ? err : 'Registration failed';
             setError(msg);
-            showToast(typeof msg === 'string' ? msg : 'Registration failed', 'error');
+            showToast(msg, 'error');
         } finally {
             setLoading(false);
         }

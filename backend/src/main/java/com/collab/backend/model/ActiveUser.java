@@ -14,10 +14,12 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "active_user",
-uniqueConstraints = {
-@UniqueConstraint(columnNames = {"room_id", "session_id"})
-  }
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"room_id", "session_id"}),
+                @UniqueConstraint(columnNames = {"user_name"})
+        }
 )
+
 public class ActiveUser {
 
     @Id

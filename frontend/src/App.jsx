@@ -9,37 +9,36 @@ function AppContent() {
   const [showRegister, setShowRegister] = useState(false);
   const [roomId, setRoomId] = useState(null);
   const [userName, setUserName] = useState('');
-  const [sessionId, setSessionId] = useState('');
   const [userColor, setUserColor] = useState('');
 
   const { isAuthenticated, user } = useAuth();
-
-  const generateSessionId = () => {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  };
-
-  // Generate session ID on first mount
-  useEffect(() => {
-    const storedSessionId = sessionStorage.getItem('sessionId');
-    if (storedSessionId) {
-      setSessionId(storedSessionId);
-    } else {
-      const newSessionId = generateSessionId();
-      sessionStorage.setItem('sessionId', newSessionId);
-      setSessionId(newSessionId);
-    }
-  }, []);
 
   const handleJoinRoom = (roomId, userName, userColor) => {
     setRoomId(roomId);
     setUserName(userName);
     setUserColor(userColor);
+
+    // Track active room per user in localStorage so that
+    // other tabs can prevent joining another room with
+    // the same authenticated user.
+    if (user?.email) {
+      localStorage.setItem(
+        'activeRoom',
+        JSON.stringify({
+          roomId,
+          userEmail: user.email,
+        }),
+      );
+    }
   };
 
   const handleExitRoom = () => {
     setRoomId(null);
     setUserName('');
     setUserColor('');
+
+    // Clear active room marker for this browser
+    localStorage.removeItem('activeRoom');
   };
 
   // Show login/register if not authenticated
@@ -56,14 +55,12 @@ function AppContent() {
       {!roomId ? (
         <JoinRoomModal
           onJoinRoom={handleJoinRoom}
-          sessionId={sessionId}
         />
       ) : (
         <CollaborativeBoard
           roomId={roomId}
           userName={userName || user.name}
           userColor={userColor}
-          sessionId={sessionId}
           onExit={handleExitRoom}
         />
       )}

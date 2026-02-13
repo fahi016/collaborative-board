@@ -1,13 +1,11 @@
 package com.collab.backend.controller;
 
-import com.collab.backend.dto.*;
-import com.collab.backend.exception.BusinessException;
-import com.collab.backend.exception.RoomFullException;
+import com.collab.backend.dto.ActiveUserResponse;
+import com.collab.backend.dto.RoomCreateResponse;
+import com.collab.backend.dto.RoomInfoResponse;
 import com.collab.backend.exception.RoomNotFoundException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
-import com.collab.backend.model.User;
-import com.collab.backend.service.AuthService;
 import com.collab.backend.service.RoomService;
 import com.collab.backend.service.UserService;
 import lombok.AllArgsConstructor;
@@ -16,7 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @AllArgsConstructor
@@ -25,7 +22,6 @@ public class RoomController {
 
     private final RoomService roomService;
     private final UserService userService;
-    private final AuthService authService;
 
     /**
      * Create a new room

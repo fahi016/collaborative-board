@@ -27,9 +27,9 @@ function Login({ onSwitchToRegister }) {
             showToast('Logged in successfully', 'success');
             // AuthContext will handle navigation
         } catch (err) {
-            const msg = err || 'Invalid email or password';
+            const msg = typeof err === 'string' ? err : 'Invalid email or password';
             setError(msg);
-            showToast(typeof msg === 'string' ? msg : 'Invalid email or password', 'error');
+            showToast(msg, 'error');
         } finally {
             setLoading(false);
         }

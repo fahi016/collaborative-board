@@ -10,6 +10,32 @@ const getAuthHeaders = (extra = {}) => {
   };
 };
 
+const handleJsonResponse = async (res, defaultErrorMessage) => {
+  if (res.ok) {
+    return res.json();
+  }
+
+  let message = defaultErrorMessage;
+  try {
+    const body = await res.json();
+    message =
+      body?.message ||
+      body?.error ||
+      body?.details ||
+      message;
+  } catch {
+    // ignore JSON parse errors and fall back to default
+  }
+
+  if (res.status === 401) {
+    // Token likely invalid or expired – clear client-side auth
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  }
+
+  throw new Error(message);
+};
+
 export const api = {
   createRoom: async () => {
     const res = await fetch(`${API_BASE_URL}/api/rooms`, {
@@ -19,8 +45,7 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to create rooms. Please log in again.');
     }
-    if (!res.ok) throw new Error('Failed to create room');
-    return res.json();
+    return handleJsonResponse(res, 'Failed to create room');
   },
 
   // Join a room using REST (Session-Id header)
@@ -43,9 +68,8 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to join this room.');
     }
-    if (!res.ok) throw new Error('Failed to join room');
 
-    return res.json();
+    return handleJsonResponse(res, 'Failed to join room');
   },
 
   getRoomInfo: async (roomId) => {
@@ -55,8 +79,7 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to view this room.');
     }
-    if (!res.ok) throw new Error('Room not found');
-    return res.json();
+    return handleJsonResponse(res, 'Room not found');
   },
 
   getActiveUsers: async (roomId) => {
@@ -66,8 +89,7 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to view users in this room.');
     }
-    if (!res.ok) throw new Error('Failed to get users');
-    return res.json();
+    return handleJsonResponse(res, 'Failed to get users');
   },
 
   // Board state APIs for loading/syncing canvas history
@@ -81,8 +103,7 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to access this board.');
     }
-    if (!res.ok) throw new Error('Failed to load board state');
-    return res.json();
+    return handleJsonResponse(res, 'Failed to load board state');
   },
 
   updateBoardState: async (roomId, { pageNumber = 1, canvasData }) => {
@@ -96,8 +117,7 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to save this board.');
     }
-    if (!res.ok) throw new Error('Failed to save board state');
-    return res.json();
+    return handleJsonResponse(res, 'Failed to save board state');
   },
 
   clearBoardState: async (roomId, pageNumber = 1) => {
@@ -111,7 +131,6 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to clear this board.');
     }
-    if (!res.ok) throw new Error('Failed to clear board');
-    return res.json();
+    return handleJsonResponse(res, 'Failed to clear board');
   },
 };

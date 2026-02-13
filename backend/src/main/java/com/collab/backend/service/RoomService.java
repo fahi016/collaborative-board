@@ -71,12 +71,19 @@ public class RoomService {
         repository.save(room);
     }
 
+    /**
+     * Generate a short, user-friendly room ID with low collision probability.
+     * Uses the first 10 characters of a hyphen-stripped UUID.
+     */
     private String generateRoomId() {
-        return UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        String raw = UUID.randomUUID().toString().replace("-", "").toUpperCase();
+        return raw.substring(0, 10);
     }
 
 
     public void save(Room room) {
         repository.save(room);
     }
+
+
 }
