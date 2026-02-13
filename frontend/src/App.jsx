@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
-import JoinRoomModal from './components/JoinRoomModal';
+import MyRooms from './components/MyRooms';
 import CollaborativeBoard from './components/CollaborativeBoard';
 
 function AppContent() {
@@ -13,7 +13,7 @@ function AppContent() {
 
   const { isAuthenticated, user } = useAuth();
 
-  const handleJoinRoom = (roomId, userName, userColor) => {
+  const handleJoinRoom = (roomId, userName, userColor = '') => {
     setRoomId(roomId);
     setUserName(userName);
     setUserColor(userColor);
@@ -53,9 +53,7 @@ function AppContent() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-100">
       {!roomId ? (
-        <JoinRoomModal
-          onJoinRoom={handleJoinRoom}
-        />
+        <MyRooms onJoinRoom={handleJoinRoom} />
       ) : (
         <CollaborativeBoard
           roomId={roomId}

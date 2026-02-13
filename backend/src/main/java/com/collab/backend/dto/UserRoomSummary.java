@@ -7,11 +7,13 @@ import java.time.LocalDateTime;
 
 @Getter
 @AllArgsConstructor
-public class RoomInfoResponse {
+public class UserRoomSummary {
     private String roomId;
     private String name;
     private Integer currentUsers;
     private Integer maxUsers;
     private LocalDateTime createdAt;
-    private boolean isFull;
+    private boolean full;
+    private boolean owner;          // true if user created the room
+    private LocalDateTime lastJoinedAt; // for joined rooms (owner might be null)
 }

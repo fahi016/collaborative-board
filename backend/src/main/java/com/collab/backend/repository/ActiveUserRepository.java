@@ -46,4 +46,9 @@ public interface ActiveUserRepository extends JpaRepository<ActiveUser, Long> {
     boolean existsByRoom_RoomIdAndUserName(String roomId, String username);
 
     boolean existsByRoom_RoomIdAndSessionId(String roomId, String sessionId);
+
+    /**
+     * Delete all active users from a room
+     */
+    void deleteByRoom_RoomId(String roomId);
 }

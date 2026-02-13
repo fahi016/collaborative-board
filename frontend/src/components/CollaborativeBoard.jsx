@@ -13,6 +13,7 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   const [color, setColor] = useState('#000000');
   const [users, setUsers] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [roomName, setRoomName] = useState(null);
   const canvasRef = useRef(null);
   const { showToast } = useToast();
 
@@ -62,6 +63,34 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
     setUsers(message.users);
   }, []);
 
+  const handleRoomUpdate = useCallback((message) => {
+    if (!message || message.type !== 'room_update') return;
+    
+    if (message.event === 'updated' && message.roomName) {
+      setRoomName(message.roomName);
+      showToast(`Room name updated to "${message.roomName}"`, 'info');
+    } else if (message.event === 'deleted') {
+      showToast('This room has been deleted by the owner', 'error');
+      setTimeout(() => {
+        onExit();
+      }, 2000);
+    }
+  }, [showToast, onExit]);
+
+  const handleError = useCallback((message) => {
+    if (!message || message.type !== 'error') return;
+    
+    const errorMsg = message.message || 'An error occurred';
+    showToast(errorMsg, 'error');
+    
+    // If it's a join error, exit the room
+    if (message.roomId === roomId) {
+      setTimeout(() => {
+        onExit();
+      }, 3000);
+    }
+  }, [roomId, showToast, onExit]);
+
   const handleAction = useCallback(
     (action) => {
       if (!action || !action.type || !action.data) {
@@ -84,6 +113,19 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
     onExit();
   }, [roomId, userName, onExit]);
 
+  // Fetch room info on mount
+  useEffect(() => {
+    const fetchRoomInfo = async () => {
+      try {
+        const info = await api.getRoomInfo(roomId);
+        setRoomName(info.name || null);
+      } catch (err) {
+        console.error('Failed to fetch room info:', err);
+      }
+    };
+    fetchRoomInfo();
+  }, [roomId]);
+
   useEffect(() => {
     let active = true;
 
@@ -103,6 +145,12 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
 
         // USER PRESENCE EVENTS
         wsService.subscribe(`/topic/room/${roomId}/users`, handleUserUpdate);
+
+        // ROOM UPDATE EVENTS
+        wsService.subscribe(`/topic/room/${roomId}/updates`, handleRoomUpdate);
+
+        // ERROR MESSAGES (per-user queue)
+        wsService.subscribe('/user/queue/errors', handleError);
 
         // 3️⃣ JOIN ROOM (WebSocket-only presence)
         wsService.joinRoom(roomId, { userName });
@@ -136,12 +184,13 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
       handleBeforeUnload();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [roomId, userName, showToast, handleHistoryMessage, handleRemoteAction, handleUserUpdate, onExit]);
+  }, [roomId, userName, showToast, handleHistoryMessage, handleRemoteAction, handleUserUpdate, handleRoomUpdate, handleError, onExit]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-50">
       <TopBar
         roomId={roomId}
+        roomName={roomName}
         userName={userName}
         onExit={handleExit}
         connected={connected}

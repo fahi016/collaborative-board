@@ -13,8 +13,7 @@ import java.time.LocalDateTime;
 @Setter
 public class RoomCreateResponse {
     private String roomId;
+    private String name;
     private LocalDateTime createdAt;
     private Integer maxUsers;
-
-
 }

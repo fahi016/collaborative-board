@@ -1,7 +1,7 @@
 // src/components/TopBar.jsx
 import { useToast } from '../context/ToastContext';
 
-function TopBar({ roomId, userName, onExit, connected }) {
+function TopBar({ roomId, roomName, userName, onExit, connected }) {
   const { showToast } = useToast();
 
   const copyRoomId = async () => {
@@ -18,14 +18,22 @@ function TopBar({ roomId, userName, onExit, connected }) {
       <div className="flex items-center space-x-6">
         <h1 className="text-xl font-bold text-gray-800">Collaborative Board</h1>
         
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-600">Room ID:</span>
-          <button
-            onClick={copyRoomId}
-            className="font-mono font-bold text-blue-600 hover:text-blue-700 px-3 py-1 bg-blue-50 rounded hover:bg-blue-100 transition"
-          >
-            {roomId}
-          </button>
+        <div className="flex items-center space-x-3">
+          {roomName && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Room:</span>
+              <span className="text-sm font-semibold text-gray-800">{roomName}</span>
+            </div>
+          )}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">ID:</span>
+            <button
+              onClick={copyRoomId}
+              className="font-mono font-bold text-blue-600 hover:text-blue-700 px-3 py-1 bg-blue-50 rounded hover:bg-blue-100 transition text-sm"
+            >
+              {roomId}
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">

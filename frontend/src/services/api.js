@@ -37,10 +37,13 @@ const handleJsonResponse = async (res, defaultErrorMessage) => {
 };
 
 export const api = {
-  createRoom: async () => {
+  createRoom: async (name) => {
     const res = await fetch(`${API_BASE_URL}/api/rooms`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders({
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify({ name }),
     });
     if (res.status === 403) {
       throw new Error('You are not allowed to create rooms. Please log in again.');
@@ -132,5 +135,61 @@ export const api = {
       throw new Error('You are not allowed to clear this board.');
     }
     return handleJsonResponse(res, 'Failed to clear board');
+  },
+
+  // Get rooms for the current authenticated user (owned + joined)
+  getMyRooms: async () => {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/my`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.status === 403) {
+      throw new Error('You are not allowed to view your rooms.');
+    }
+    return handleJsonResponse(res, 'Failed to load your rooms');
+  },
+
+  // Update room name (only owner)
+  updateRoom: async (roomId, name) => {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders({
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify({ name }),
+    });
+    if (res.status === 403) {
+      throw new Error('Only the room owner can update the room name.');
+    }
+    return handleJsonResponse(res, 'Failed to update room');
+  },
+
+  // Delete room (only owner)
+  deleteRoom: async (roomId) => {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (res.status === 403) {
+      throw new Error('Only the room owner can delete the room.');
+    }
+    if (res.status === 204) {
+      return null; // No content
+    }
+    return handleJsonResponse(res, 'Failed to delete room');
+  },
+
+  // Leave room (joined users only, not owners)
+  leaveRoom: async (roomId) => {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/leave`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    if (res.status === 400) {
+      throw new Error('Room owners cannot leave their own room. Please delete the room instead.');
+    }
+    if (res.status === 200) {
+      return null; // Success
+    }
+    return handleJsonResponse(res, 'Failed to leave room');
   },
 };

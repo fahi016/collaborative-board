@@ -3,10 +3,13 @@ package com.collab.backend.controller;
 import com.collab.backend.dto.BoardActionMessage;
 import com.collab.backend.dto.JoinRoomResponse;
 import com.collab.backend.dto.UserMessage;
+import com.collab.backend.exception.RoomFullException;
 import com.collab.backend.model.ActiveUser;
-import com.collab.backend.service.BoardRedisService;
-import com.collab.backend.service.BoardService;
-import com.collab.backend.service.UserService;
+import com.collab.backend.model.Room;
+import com.collab.backend.model.User;
+import com.collab.backend.repository.RoomParticipantRepository;
+import com.collab.backend.repository.UserRepository;
+import com.collab.backend.service.*;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
@@ -33,6 +36,9 @@ public class WebSocketController {
     private BoardService boardService;
     private UserService userService;
     private final BoardRedisService boardRedisService;
+    private final UserRepository userRepository;
+    private final RoomParticipantService roomParticipantService;
+    private final RoomService roomService;
 
 
     /**
@@ -62,6 +68,11 @@ public class WebSocketController {
                     username,
                     sessionId
             );
+
+            User user = userRepository.findByEmail(username)
+                    .orElseThrow(()-> new IllegalStateException("User not found: " + username));
+            Room room = roomService.getRoomById(roomId);
+            roomParticipantService.addOrUpdateParticipant(room, user);
 
 
 
@@ -97,9 +108,56 @@ public class WebSocketController {
                     response.getUserColor()
             );
 
+        } catch (IllegalStateException e) {
+            // Handle specific case: user already active in another room
+            logger.warn("User {} cannot join room {}: {}", principal.getName(), roomId, e.getMessage());
+            
+            // Send error message directly to the user
+            messagingTemplate.convertAndSendToUser(
+                    principal.getName(),
+                    "/queue/errors",
+                    (Object) Map.of(
+                            "type", "error",
+                            "message", e.getMessage(),
+                            "roomId", roomId
+                    )
+            );
+            
+            // Return null to prevent broadcasting to the room topic
+            return null;
+        } catch (RoomFullException e) {
+            // Handle room full exception
+            logger.warn("User {} cannot join room {}: {}", principal.getName(), roomId, e.getMessage());
+            
+            // Send error message directly to the user
+            messagingTemplate.convertAndSendToUser(
+                    principal.getName(),
+                    "/queue/errors",
+                    (Object) Map.of(
+                            "type", "error",
+                            "message", e.getMessage(),
+                            "roomId", roomId
+                    )
+            );
+            
+            // Return null to prevent broadcasting to the room topic
+            return null;
         } catch (Exception e) {
             logger.error("Error handling user join", e);
-            throw e;
+            
+            // Send error message to the user
+            messagingTemplate.convertAndSendToUser(
+                    principal.getName(),
+                    "/queue/errors",
+                    (Object) Map.of(
+                            "type", "error",
+                            "message", "Failed to join room: " + e.getMessage(),
+                            "roomId", roomId
+                    )
+            );
+            
+            // Return null to prevent broadcasting to the room topic
+            return null;
         }
     }
 

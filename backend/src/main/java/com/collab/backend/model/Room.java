@@ -1,9 +1,6 @@
 package com.collab.backend.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -20,6 +17,10 @@ public class Room {
     @Column(name = "room_id", length = 36)
     private String roomId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id", nullable = false)
+    private User owner;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -29,16 +30,30 @@ public class Room {
     @Column(name = "current_users")
     private Integer currentUsers = 0;
 
+    @Column(name = "name", length = 100)
+    private String name;
+
     // Constructors
     public Room() {
         this.createdAt = LocalDateTime.now();
     }
 
-    public Room(String roomId) {
+    public Room(String roomId, User owner) {
         this.roomId = roomId;
+        this.owner = owner;
         this.createdAt = LocalDateTime.now();
         this.maxUsers = 3;
         this.currentUsers = 0;
+        this.name = null;
+    }
+
+    public Room(String roomId, User owner, String name) {
+        this.roomId = roomId;
+        this.owner = owner;
+        this.createdAt = LocalDateTime.now();
+        this.maxUsers = 3;
+        this.currentUsers = 0;
+        this.name = name;
     }
 
     //Helper methods
