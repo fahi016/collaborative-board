@@ -23,7 +23,7 @@ public class BoardService {
 
     private RoomService roomService;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     /**
      * Initialize board state for a room

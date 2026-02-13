@@ -23,6 +23,8 @@ public class UserService {
 
     private final ActiveUserRepository repository;
     private final RoomService roomService;
+    private final BoardRedisService boardRedisService;
+    private final BoardService boardService;
 
     private static final String[] COLORS = {
             "#FF5733", "#33FF57", "#3357FF", "#FF33F5", "#F5FF33",
@@ -30,7 +32,7 @@ public class UserService {
     };
 
     /**
-     * Join a room (atomic & safe)
+     * Join a room
      */
     public JoinRoomResponse joinAuthenticatedUser(String roomId, String userName, String sessionId) {
 
@@ -86,9 +88,33 @@ public class UserService {
         if (userOpt.isPresent()) {
             ActiveUser user = userOpt.get();
             Room room = user.getRoom();
+            String roomId = room.getRoomId();
 
             repository.delete(user);
             roomService.decrementUserCount(room.getRoomId());
+
+            Room updatedRoom = roomService.getRoomById(roomId);
+
+            if (updatedRoom.getCurrentUsers() == 0) {
+
+                List<Object> actions =
+                        boardRedisService.getAllActions(roomId);
+
+                if (actions != null && !actions.isEmpty()) {
+                    try {
+                        String json = new com.fasterxml.jackson.databind.ObjectMapper()
+                                .writeValueAsString(actions);
+
+                        boardService.updateBoardState(roomId, 1, json);
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                boardRedisService.clearRoom(roomId);
+            }
+
         }
     }
 

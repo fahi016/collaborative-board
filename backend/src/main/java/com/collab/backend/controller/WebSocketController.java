@@ -4,6 +4,7 @@ import com.collab.backend.dto.BoardActionMessage;
 import com.collab.backend.dto.JoinRoomResponse;
 import com.collab.backend.dto.UserMessage;
 import com.collab.backend.model.ActiveUser;
+import com.collab.backend.service.BoardRedisService;
 import com.collab.backend.service.BoardService;
 import com.collab.backend.service.UserService;
 import lombok.AllArgsConstructor;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Controller;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 
@@ -30,6 +32,8 @@ public class WebSocketController {
     private SimpMessagingTemplate messagingTemplate;
     private BoardService boardService;
     private UserService userService;
+    private final BoardRedisService boardRedisService;
+
 
     /**
      * Handle user joining a room
@@ -57,7 +61,7 @@ public class WebSocketController {
             // Add user to room
             JoinRoomResponse response = userService.joinAuthenticatedUser(
                     roomId,
-                    principal.getName(),
+                    username,
                     sessionId
             );
 
@@ -65,6 +69,28 @@ public class WebSocketController {
 
             // Also send updated user list
             sendUserList(roomId);
+
+            // Send board history to joining user only
+            List<Object> history = boardRedisService.getAllActions(roomId);
+
+            if (history != null && !history.isEmpty()) {
+                messagingTemplate.convertAndSendToUser(
+                        principal.getName(),
+                        "/queue/history",
+                        history
+                );
+            } else {
+                var boardState = boardService.getBoardState(roomId, 1);
+
+                if (boardState != null && boardState.getCanvasData() != null) {
+                    messagingTemplate.convertAndSendToUser(
+                            principal.getName(),
+                            "/queue/history",
+                            boardState.getCanvasData()
+                    );
+                }
+            }
+
 
             return new UserMessage(
                     "join",
@@ -148,6 +174,8 @@ public class WebSocketController {
         }
 
         logger.debug("Draw action in room {} by {}", roomId, principal.getName());
+        boardRedisService.saveAction(roomId, message);
+
 
         return message;
     }
@@ -178,6 +206,8 @@ public class WebSocketController {
         }
 
         logger.debug("Text action in room {} by {}", roomId, principal.getName());
+        boardRedisService.saveAction(roomId, message);
+
 
         return message;
     }
@@ -209,6 +239,8 @@ public class WebSocketController {
         }
 
         logger.debug("Erase action in room {} by {}", roomId, principal.getName());
+        boardRedisService.saveAction(roomId, message);
+
 
         return message;
     }

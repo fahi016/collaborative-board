@@ -18,10 +18,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         // Enable a simple in-memory message broker
         // Prefix for messages going FROM server TO client
-        config.enableSimpleBroker("/topic");
+        config.enableSimpleBroker("/topic","/queue");
 
         // Prefix for messages going FROM client TO server
         config.setApplicationDestinationPrefixes("/app");
+
+        config.setUserDestinationPrefix("/user");
+
 
     }
 
@@ -39,6 +42,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(jwtChannelInterceptor);
     }
+
+
 
 
 

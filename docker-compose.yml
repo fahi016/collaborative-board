@@ -37,6 +37,16 @@ services:
     networks:
       - studyboard-network
 
+  redis:
+    image: redis:7
+    container_name: collaborative-board-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - studyboard-network
+
+
 volumes:
   postgres_data:
   pgadmin_data:

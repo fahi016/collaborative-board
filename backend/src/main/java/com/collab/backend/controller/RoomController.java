@@ -56,47 +56,6 @@ public class RoomController {
         return ResponseEntity.ok(response);
     }
 
-//    /**
-//     * Join a room
-//     * POST /api/rooms/{roomId}/join
-//     */
-//    @PostMapping("/{roomId}/join")
-//    public ResponseEntity<JoinRoomResponse> joinRoom(
-//            @PathVariable String roomId,
-//            @RequestBody JoinRoomRequest request,
-//            @RequestHeader(value = "Session-Id", required = false) String sessionId
-//    ) {
-//        try {
-//            // Get authenticated user
-//            User currentUser = authService.getCurrentUser();
-//
-//            // Generate session ID if not provided
-//            if (sessionId == null || sessionId.isEmpty()) {
-//                sessionId = java.util.UUID.randomUUID().toString();
-//            }
-//
-//            // Check if room is full
-//            if (roomService.isRoomFull(roomId)) {
-//                throw new RoomFullException("Room is full");
-//
-//            }
-//
-//            // Add user to room (updated to use User object)
-//            JoinRoomResponse response = userService.joinRoom(
-//                    roomId,
-//                    currentUser.getName(),
-//                    sessionId
-//            );
-//            return ResponseEntity.ok(response);
-//
-//        } catch (RoomNotFoundException e) {
-//            throw new RoomNotFoundException("Room not found");
-//        } catch (RoomFullException e) {
-//            throw new RoomFullException("Room is full");
-//        } catch (Exception e) {
-//            throw new BusinessException(e.getMessage());
-//        }
-//    }
 
     /**
      * Get active users in a room

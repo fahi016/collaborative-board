@@ -17,23 +17,24 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   useEffect(() => {
     let active = true;
 
-    // 1️⃣ Load board state (DATA ONLY, no users)
-    loadBoardState();
-
-    // 2️⃣ Connect WebSocket
+    // 1️⃣ Connect WebSocket
     wsService.connect(() => {
       if (!active) return;
 
       setConnected(true);
 
-      // JOIN ROOM (WebSocket-only presence)
-      wsService.joinRoom(roomId, { userName });
+      // 2️⃣ SUBSCRIBE before sending join
+      // History queue (per-user)
+      wsService.subscribe('/user/queue/history', handleHistoryMessage);
 
       // BOARD EVENTS
       wsService.subscribe(`/topic/room/${roomId}`, handleRemoteAction);
 
       // USER PRESENCE EVENTS
       wsService.subscribe(`/topic/room/${roomId}/users`, handleUserUpdate);
+
+      // 3️⃣ JOIN ROOM (WebSocket-only presence)
+      wsService.joinRoom(roomId, { userName });
     });
 
     // 3️⃣ Handle tab close / refresh
@@ -51,14 +52,30 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
     };
   }, [roomId, userName]);
 
-  const loadBoardState = async () => {
+  const handleHistoryMessage = (rawMessage) => {
+    if (!canvasRef.current || !rawMessage) return;
+
+    let historyPayload = rawMessage;
+
+    // Our wsService.subscribe already JSON.parses msg.body,
+    // but backend might send a JSON string; handle both safely.
     try {
-      const boardState = await api.getBoardState(roomId);
-      if (boardState.canvasData && canvasRef.current) {
-        canvasRef.current.loadState(boardState.canvasData);
+      if (typeof historyPayload === 'string') {
+        historyPayload = JSON.parse(historyPayload);
       }
-    } catch (error) {
-      console.error('Failed to load board state:', error);
+    } catch (e) {
+      try {
+        historyPayload = JSON.parse(historyPayload);
+      } catch (e2) {
+        console.error('Failed to parse history payload', e2);
+        return;
+      }
+    }
+
+    if (Array.isArray(historyPayload)) {
+      historyPayload.forEach((action) => {
+        canvasRef.current.applyRemoteAction(action);
+      });
     }
   };
 
