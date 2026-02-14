@@ -19,6 +19,9 @@ import java.util.Optional;
 @AllArgsConstructor
 public class BoardService {
 
+    /** Default page number for single-page boards. Multi-page would extend flush/snapshot to iterate pages. */
+    public static final int DEFAULT_PAGE = 1;
+
     private BoardStateRepository boardStateRepository;
 
     private RoomService roomService;
@@ -26,20 +29,26 @@ public class BoardService {
     private final ObjectMapper objectMapper;
 
     /**
-     * Initialize board state for a room
+     * Initialize board state for a room and page.
      */
-    public BoardState initializeBoardState(String roomId) {
+    public BoardState initializeBoardState(String roomId, Integer pageNumber) {
         Room room = roomService.getRoomById(roomId);
 
-        // Check if board state already exists
-        Optional<BoardState> existingState = boardStateRepository.findByRoomAndPageNumber(room, 1);
+        Optional<BoardState> existingState = boardStateRepository.findByRoomAndPageNumber(room, pageNumber);
         if (existingState.isPresent()) {
             return existingState.get();
         }
 
-        // Create new board state with empty canvas data
         BoardState boardState = new BoardState(room, "[]");
+        boardState.setPageNumber(pageNumber);
         return boardStateRepository.save(boardState);
+    }
+
+    /**
+     * Initialize board state for default page (convenience).
+     */
+    public BoardState initializeBoardState(String roomId) {
+        return initializeBoardState(roomId, DEFAULT_PAGE);
     }
 
     /**
@@ -47,11 +56,13 @@ public class BoardService {
      */
     public BoardState getBoardState(String roomId, Integer pageNumber) {
         return boardStateRepository.findByRoom_RoomIdAndPageNumber(roomId, pageNumber)
-                .orElseGet(() -> initializeBoardState(roomId));
+                .orElseGet(() -> initializeBoardState(roomId, pageNumber));
     }
 
     /**
-     * Update board state
+     * Update board state. Used by: (1) REST PUT when room has no active users,
+     * (2) flush from Redis (last user leaves) and scheduled snapshot — to avoid
+     * conflicting writers, REST PUT must be rejected when the room has active users.
      */
     public void updateBoardState(String roomId, Integer pageNumber, String canvasData) {
         Optional<BoardState> boardStateOpt = boardStateRepository.findByRoom_RoomIdAndPageNumber(roomId, pageNumber);

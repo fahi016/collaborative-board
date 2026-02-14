@@ -6,10 +6,13 @@ import com.collab.backend.service.BoardService;
 import com.collab.backend.service.UserService;
 import com.collab.backend.service.AuthService;
 import lombok.AllArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.AccessDeniedException;
 import jakarta.validation.Valid;
+
+import java.time.LocalDateTime;
 
 @RestController
 @AllArgsConstructor
@@ -43,15 +46,26 @@ public class BoardController {
     }
 
     /**
-     * Update board state
+     * Update board state.
      * PUT /api/rooms/{roomId}/state
+     * Rejected with 409 when the room has active users to avoid conflicting with
+     * Redis-backed real-time state (single source of truth during session).
      */
     @PutMapping
-    public ResponseEntity<SuccessResponse> updateBoardState(
+    public ResponseEntity<?> updateBoardState(
             @PathVariable String roomId,
             @Valid @RequestBody UpdateBoardStateRequest request
     ) {
         ensureCurrentUserInRoom(roomId);
+
+        if (!userService.getUsersInRoom(roomId).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ErrorResponse(
+                            "BOARD_LOCKED",
+                            "Board cannot be updated via REST while users are in the room. Changes are saved automatically when the room is empty.",
+                            LocalDateTime.now()
+                    ));
+        }
 
         boardService.updateBoardState(
                 roomId,

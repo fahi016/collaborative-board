@@ -79,11 +79,10 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
 
   const handleError = useCallback((message) => {
     if (!message || message.type !== 'error') return;
-    
-    const errorMsg = message.message || 'An error occurred';
+
+    const errorMsg = message.message || message.details || 'An error occurred';
     showToast(errorMsg, 'error');
-    
-    // If it's a join error, exit the room
+
     if (message.roomId === roomId) {
       setTimeout(() => {
         onExit();

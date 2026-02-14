@@ -8,9 +8,10 @@ import com.collab.backend.model.User;
 import com.collab.backend.repository.ActiveUserRepository;
 import com.collab.backend.repository.UserRepository;
 import jakarta.transaction.Transactional;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,10 +21,13 @@ import java.util.UUID;
 
 @Service
 @Transactional
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class UserService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
+
+    @Value("${app.allow-multi-room-per-user:false}")
+    private boolean allowMultiRoomPerUser;
 
     private final ActiveUserRepository repository;
     private final RoomService roomService;
@@ -45,12 +49,9 @@ public class UserService {
 
         Room room = roomService.getRoomByIdForUpdate(roomId);
 
-        // 🔥 FIRST check if user already active anywhere
-        Optional<ActiveUser> existingUserGlobal =
-                repository.findByUserName(userName);
+        Optional<ActiveUser> existingUserGlobal = repository.findByUserName(userName);
 
         if (existingUserGlobal.isPresent()) {
-
             ActiveUser existing = existingUserGlobal.get();
 
             if (existing.getRoom().getRoomId().equals(roomId)) {
@@ -59,10 +60,12 @@ public class UserService {
                 );
             }
 
-            throw new IllegalStateException(
-                    "User already active in another room: "
-                            + existing.getRoom().getRoomId()
-            );
+            if (!allowMultiRoomPerUser) {
+                throw new IllegalStateException(
+                        "User already active in another room: "
+                                + existing.getRoom().getRoomId()
+                );
+            }
         }
 
         // THEN check room capacity
@@ -111,7 +114,7 @@ public class UserService {
                         String json = new com.fasterxml.jackson.databind.ObjectMapper()
                                 .writeValueAsString(actions);
 
-                        boardService.updateBoardState(roomId, 1, json);
+                        boardService.updateBoardState(roomId, BoardService.DEFAULT_PAGE, json);
 
                     } catch (Exception e) {
                         logger.error("Failed to persist board actions for room {}", roomId, e);

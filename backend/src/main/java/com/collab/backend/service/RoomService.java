@@ -86,13 +86,21 @@ public class RoomService {
         repository.save(room);
     }
 
+    private static final int ROOM_ID_MAX_RETRIES = 5;
+
     /**
      * Generate a short, user-friendly room ID with low collision probability.
-     * Uses the first 10 characters of a hyphen-stripped UUID.
+     * Tries up to ROOM_ID_MAX_RETRIES times; on repeated collision falls back to a longer UUID-based id.
      */
     private String generateRoomId() {
-        String raw = UUID.randomUUID().toString().replace("-", "").toUpperCase();
-        return raw.substring(0, 10);
+        for (int i = 0; i < ROOM_ID_MAX_RETRIES; i++) {
+            String raw = UUID.randomUUID().toString().replace("-", "").toUpperCase();
+            String candidate = raw.substring(0, 10);
+            if (!repository.existsByRoomId(candidate)) {
+                return candidate;
+            }
+        }
+        return UUID.randomUUID().toString().replace("-", "").toUpperCase();
     }
 
 

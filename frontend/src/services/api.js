@@ -120,6 +120,13 @@ export const api = {
     if (res.status === 403) {
       throw new Error('You are not allowed to save this board.');
     }
+    if (res.status === 409) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(
+        body?.message ||
+          'Board cannot be updated while users are in the room. Changes are saved automatically when the room is empty.',
+      );
+    }
     return handleJsonResponse(res, 'Failed to save board state');
   },
 
