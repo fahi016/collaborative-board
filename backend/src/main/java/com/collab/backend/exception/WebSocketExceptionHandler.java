@@ -54,14 +54,24 @@ public class WebSocketExceptionHandler {
     @MessageExceptionHandler(RoomFullException.class)
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public Map<String, Object> handleRoomFull(RoomFullException ex, Principal principal) {
-        logger.warn("Room full: {}", ex.getMessage());
+        logger.debug("Room full (join rejected): {}", ex.getMessage());
         return errorPayload("ROOM_FULL", ex.getMessage(), principal);
+    }
+
+    @MessageExceptionHandler(RoomNotFoundException.class)
+    @SendToUser(destinations = "/queue/errors", broadcast = false)
+    public Map<String, Object> handleRoomNotFound(RoomNotFoundException ex, Principal principal) {
+        logger.warn("Room not found (chat/action): {}", ex.getMessage());
+        return errorPayload("ROOM_NOT_FOUND", ex.getMessage(), principal);
     }
 
     @MessageExceptionHandler(Exception.class)
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public Map<String, Object> handleGeneric(Exception ex, Principal principal) {
-        logger.error("WebSocket error", ex);
+        logger.error("WebSocket error: {}", ex.getMessage());
+        if (logger.isDebugEnabled()) {
+            logger.debug("WebSocket error stack", ex);
+        }
         return errorPayload("INTERNAL_ERROR", "Something went wrong. Please try again.", principal);
     }
 

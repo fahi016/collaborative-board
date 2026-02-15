@@ -36,14 +36,15 @@ public class WebSocketEventListener {
 
         String simpSessionId = accessor.getSessionId();
 
-        logger.info("WebSocket disconnected. simpSessionId={}", simpSessionId);
+        logger.debug("WebSocket disconnected. simpSessionId={}", simpSessionId);
 
         if (simpSessionId != null) {
-            // Use the same removal logic as an explicit LEAVE event:
-            // this will decrement the room user count and, if this
-            // was the last user, flush Redis → PostgreSQL and clear
-            // the Redis room key to avoid data loss.
-            userService.removeUserFromRoom(simpSessionId);
+            try {
+                userService.removeUserFromRoom(simpSessionId);
+            } catch (Exception e) {
+                // Already removed by leave, or transient error - avoid pile of stack traces
+                logger.warn("Disconnect cleanup for session {}: {}", simpSessionId, e.getMessage());
+            }
         }
     }
 }

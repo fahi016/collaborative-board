@@ -1,8 +1,12 @@
 package com.collab.backend.controller;
 
 import com.collab.backend.dto.BoardActionMessage;
+import com.collab.backend.dto.ChatMessageRequest;
+import com.collab.backend.dto.ChatMessageResponse;
 import com.collab.backend.dto.JoinRoomResponse;
 import com.collab.backend.dto.UserMessage;
+import com.collab.backend.dto.VoiceMicRequest;
+import com.collab.backend.dto.VoiceSignalRequest;
 import com.collab.backend.exception.RoomFullException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
@@ -39,6 +43,9 @@ public class WebSocketController {
     private final UserRepository userRepository;
     private final RoomParticipantService roomParticipantService;
     private final RoomService roomService;
+    private final VoiceSignalingService voiceSignalingService;
+    private final ChatService chatService;
+
 
 
     /**
@@ -73,6 +80,18 @@ public class WebSocketController {
                     .orElseThrow(()-> new IllegalStateException("User not found: " + username));
             Room room = roomService.getRoomById(roomId);
             roomParticipantService.addOrUpdateParticipant(room, user);
+
+            messagingTemplate.convertAndSendToUser(
+                    principal.getName(),
+                    "/queue/join-confirmation",
+                    Map.of(
+                            "type", "join-confirmation",
+                            "sessionId", response.getSessionId(),
+                            "userName", response.getUserName(),
+                            "color", response.getUserColor()
+                    )
+            );
+
 
 
 
@@ -337,5 +356,75 @@ public class WebSocketController {
         if (roomId == null || roomId.isBlank() || roomId.length() > 36) {
             throw new IllegalArgumentException("Invalid roomId");
         }
+    }
+
+
+    // Handler: relay WebRTC signaling
+    @MessageMapping("/room/{roomId}/voice/signal")
+    public void handleVoiceSignal(
+            @DestinationVariable String roomId,
+            @Valid VoiceSignalRequest request,
+            Principal principal,
+            StompHeaderAccessor accessor) {
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+        String sessionId = accessor.getSessionId();
+        if (!userService.isSessionInRoom(roomId, sessionId)) {
+            throw new IllegalStateException("User not in room");
+        }
+        try {
+            voiceSignalingService.relaySignal(roomId, sessionId, principal.getName(), request);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Voice signal rejected: {}", e.getMessage());
+            messagingTemplate.convertAndSendToUser(
+                    principal.getName(),
+                    "/queue/errors",
+                    (Object) Map.of("type", "error", "message", e.getMessage(), "roomId", roomId));
+        }
+    }
+
+        /**
+     * Handle chat message in a room.
+     * Client sends to: /app/room/{roomId}/chat
+     * Broadcasts to: /topic/room/{roomId}/chat
+     */
+    @MessageMapping("/room/{roomId}/chat")
+    @SendTo("/topic/room/{roomId}/chat")
+    public ChatMessageResponse handleChat(
+            @DestinationVariable String roomId,
+            @Valid ChatMessageRequest request,
+            Principal principal,
+            StompHeaderAccessor accessor
+    ) {
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+        String sessionId = accessor.getSessionId();
+        if (!userService.isSessionInRoom(roomId, sessionId)) {
+            throw new IllegalStateException("User not in room");
+        }
+        logger.debug("Chat message received roomId={} from {}", roomId, principal.getName());
+        return chatService.sendMessage(roomId, principal.getName(), request.getContent());
+    }
+
+    // Handler: broadcast mic on/off to room (so everyone can show mute state)
+    @MessageMapping("/room/{roomId}/voice/mic")
+    @SendTo("/topic/room/{roomId}/users")
+    public Map<String, Object> handleVoiceMic(
+            @DestinationVariable String roomId,
+            @Valid VoiceMicRequest request,
+            Principal principal,
+            StompHeaderAccessor accessor) {
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+        String sessionId = accessor.getSessionId();
+        if (!userService.isSessionInRoom(roomId, sessionId)) {
+            throw new IllegalStateException("User not in room");
+        }
+        logger.debug("Voice mic roomId={} user={} muted={}", roomId, principal.getName(), request.getMuted());
+        return Map.of(
+                "type", "voice-mic",
+                "sessionId", sessionId,
+                "userName", principal.getName(),
+                "muted", request.getMuted());
     }
 }

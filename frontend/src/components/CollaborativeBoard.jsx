@@ -4,9 +4,11 @@ import TopBar from './TopBar';
 import Toolbar from './Toolbar';
 import Canvas from './Canvas';
 import UserList from './UserList';
+import ChatPanel from './ChatPanel';
 import { wsService } from '../services/websocket';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { useVoiceRoom } from '../hooks/useVoiceRoom';
 
 function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   const [tool, setTool] = useState('pen');
@@ -14,16 +16,39 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   const [users, setUsers] = useState([]);
   const [connected, setConnected] = useState(false);
   const [roomName, setRoomName] = useState(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [voiceMicState, setVoiceMicState] = useState({});
+
+  // Chat state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const canvasRef = useRef(null);
   const { showToast } = useToast();
+
+  const [mySessionId, setMySessionId] = useState(null);
+
+  const sendVoiceSignal = useCallback(
+    (payload) => {
+      wsService.sendVoiceSignal(roomId, payload);
+    },
+    [roomId],
+  );
+
+  const {
+    startVoice,
+    leaveVoice,
+    setMuted: setVoiceMuted,
+    handleIncomingSignal: handleIncomingVoiceSignal,
+  } = useVoiceRoom(roomId, users, userName, mySessionId, sendVoiceSignal);
 
   const handleHistoryMessage = useCallback((rawMessage) => {
     if (!canvasRef.current || !rawMessage) return;
 
     let historyPayload = rawMessage;
 
-    // Our wsService.subscribe already JSON.parses msg.body,
-    // but backend might send a JSON string; handle both safely.
     try {
       if (typeof historyPayload === 'string') {
         historyPayload = JSON.parse(historyPayload);
@@ -55,17 +80,52 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   }, []);
 
   const handleUserUpdate = useCallback((message) => {
-    if (!message || message.type !== 'user-list') return;
-    if (!Array.isArray(message.users)) {
-      console.warn('Ignoring malformed user list message', message);
+    if (!message || !message.type) return;
+    if (message.type === 'user-list') {
+      if (!Array.isArray(message.users)) {
+        console.warn('Ignoring malformed user list message', message);
+        return;
+      }
+      setUsers(message.users);
+      // Fallback: set our sessionId from user list if not set yet (e.g. join-confirmation missed)
+      setMySessionId((prev) => {
+        if (prev) return prev;
+        const me = message.users.find((u) => u.userName === userName);
+        return me?.sessionId ?? null;
+      });
+    } else if (message.type === 'voice-mic') {
+      setVoiceMicState((prev) => ({
+        ...prev,
+        [message.sessionId]: message.muted,
+      }));
+    }
+  }, [userName]);
+
+  const handleChatMessage = useCallback((message) => {
+    if (!message || !message.id) {
+      console.warn('Ignoring malformed chat message', message);
       return;
     }
-    setUsers(message.users);
-  }, []);
+
+    console.log('💬 Chat message received:', message);
+
+    setChatMessages((prev) => {
+      // Avoid duplicates
+      if (prev.some(m => m.id === message.id)) {
+        return prev;
+      }
+      return [...prev, message];
+    });
+
+    // Increment unread count if chat is closed
+    if (!chatOpen && message.senderName !== userName) {
+      setUnreadCount((prev) => prev + 1);
+    }
+  }, [chatOpen, userName]);
 
   const handleRoomUpdate = useCallback((message) => {
     if (!message || message.type !== 'room_update') return;
-    
+
     if (message.event === 'updated' && message.roomName) {
       setRoomName(message.roomName);
       showToast(`Room name updated to "${message.roomName}"`, 'info');
@@ -76,6 +136,10 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
       }, 2000);
     }
   }, [showToast, onExit]);
+
+  const handlersRef = useRef({});
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
 
   const handleError = useCallback((message) => {
     if (!message || message.type !== 'error') return;
@@ -89,6 +153,16 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
       }, 3000);
     }
   }, [roomId, showToast, onExit]);
+
+  handlersRef.current = {
+    handleHistoryMessage,
+    handleRemoteAction,
+    handleUserUpdate,
+    handleRoomUpdate,
+    handleError,
+    handleIncomingVoiceSignal,
+    handleChatMessage,
+  };
 
   const handleAction = useCallback(
     (action) => {
@@ -106,11 +180,56 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
     [roomId, userName],
   );
 
+  const handleSendChatMessage = useCallback(async (content) => {
+    wsService.sendChatMessage(roomId, content);
+  }, [roomId]);
+
+  const handleToggleChat = useCallback(() => {
+    setChatOpen((prev) => !prev);
+    // Reset unread count when opening chat
+    if (!chatOpen) {
+      setUnreadCount(0);
+    }
+  }, [chatOpen]);
+
+  const handleJoinVoice = useCallback(async () => {
+    if (!mySessionId) {
+      showToast('Please wait for connection to be fully established', 'warning');
+      return;
+    }
+
+    try {
+      await startVoice();
+      setVoiceEnabled(true);
+      wsService.sendVoiceMic(roomId, false);
+      showToast('Voice joined', 'success');
+    } catch (err) {
+      console.error('Failed to start voice', err);
+      showToast(err?.message || 'Could not start microphone', 'error');
+    }
+  }, [roomId, mySessionId, startVoice, showToast]);
+
+  const handleLeaveVoice = useCallback(() => {
+    leaveVoice();
+    setVoiceEnabled(false);
+    setMuted(false);
+    setVoiceMicState({});
+    showToast('Voice left', 'info');
+  }, [leaveVoice, showToast]);
+
+  const handleMicToggle = useCallback(() => {
+    const next = !muted;
+    setMuted(next);
+    setVoiceMuted(next);
+    wsService.sendVoiceMic(roomId, next);
+  }, [roomId, muted, setVoiceMuted]);
+
   const handleExit = useCallback(() => {
+    if (voiceEnabled) leaveVoice();
     wsService.leaveRoom(roomId, { userName });
     wsService.disconnect();
     onExit();
-  }, [roomId, userName, onExit]);
+  }, [roomId, userName, voiceEnabled, leaveVoice, onExit]);
 
   // Fetch room info on mount
   useEffect(() => {
@@ -125,6 +244,25 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
     fetchRoomInfo();
   }, [roomId]);
 
+  // Load chat history when opening chat
+  useEffect(() => {
+    if (chatOpen && chatMessages.length === 0) {
+      const loadHistory = async () => {
+        try {
+          const response = await api.getChatHistory(roomId, 0, 50);
+          if (response.content && response.content.length > 0) {
+            // Messages come in DESC order, reverse them for chronological display
+            const reversedMessages = [...response.content].reverse();
+            setChatMessages(reversedMessages);
+          }
+        } catch (error) {
+          console.error('Failed to load chat history:', error);
+        }
+      };
+      loadHistory();
+    }
+  }, [chatOpen, roomId, chatMessages.length]);
+
   useEffect(() => {
     let active = true;
 
@@ -136,20 +274,31 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
         setConnected(true);
 
         // 2️⃣ SUBSCRIBE before sending join
+
+        wsService.subscribe('/user/queue/join-confirmation', (msg) => {
+          if (msg?.sessionId) setMySessionId(msg.sessionId);
+        });
+
         // History queue (per-user)
-        wsService.subscribe('/user/queue/history', handleHistoryMessage);
+        wsService.subscribe('/user/queue/history', (msg) => handlersRef.current.handleHistoryMessage?.(msg));
 
         // BOARD EVENTS
-        wsService.subscribe(`/topic/room/${roomId}`, handleRemoteAction);
+        wsService.subscribe(`/topic/room/${roomId}`, (msg) => handlersRef.current.handleRemoteAction?.(msg));
 
         // USER PRESENCE EVENTS
-        wsService.subscribe(`/topic/room/${roomId}/users`, handleUserUpdate);
+        wsService.subscribe(`/topic/room/${roomId}/users`, (msg) => handlersRef.current.handleUserUpdate?.(msg));
 
         // ROOM UPDATE EVENTS
-        wsService.subscribe(`/topic/room/${roomId}/updates`, handleRoomUpdate);
+        wsService.subscribe(`/topic/room/${roomId}/updates`, (msg) => handlersRef.current.handleRoomUpdate?.(msg));
 
         // ERROR MESSAGES (per-user queue)
-        wsService.subscribe('/user/queue/errors', handleError);
+        wsService.subscribe('/user/queue/errors', (msg) => handlersRef.current.handleError?.(msg));
+
+        // VOICE: WebRTC signaling (per-user queue)
+        wsService.subscribe('/user/queue/voice-signal', (msg) => handlersRef.current.handleIncomingVoiceSignal?.(msg));
+
+        // CHAT: Room chat messages
+        wsService.subscribe(`/topic/room/${roomId}/chat`, (msg) => handlersRef.current.handleChatMessage?.(msg));
 
         // 3️⃣ JOIN ROOM (WebSocket-only presence)
         wsService.joinRoom(roomId, { userName });
@@ -167,7 +316,7 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
         showToast(msgFromServer, 'error');
 
         setConnected(false);
-        onExit();
+        onExitRef.current?.();
       },
     );
 
@@ -183,19 +332,41 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
       handleBeforeUnload();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [roomId, userName, showToast, handleHistoryMessage, handleRemoteAction, handleUserUpdate, handleRoomUpdate, handleError, onExit]);
+  }, [roomId, userName, showToast]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-50">
+      {/* Remote voice streams (hidden; audio only) */}
+      {voiceEnabled &&
+        users
+          .filter((u) => u.sessionId !== mySessionId)
+          .map((u) => (
+            <audio
+              key={u.sessionId}
+              id={`remote-audio-${u.sessionId}`}
+              autoPlay
+              playsInline
+              className="hidden"
+              aria-label={`Remote audio ${u.userName}`}
+            />
+          ))}
+
       <TopBar
         roomId={roomId}
         roomName={roomName}
         userName={userName}
         onExit={handleExit}
         connected={connected}
+        voiceEnabled={voiceEnabled}
+        onJoinVoice={handleJoinVoice}
+        muted={muted}
+        onMicToggle={handleMicToggle}
+        onToggleChat={handleToggleChat}
+        chatOpen={chatOpen}
+        unreadCount={unreadCount}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         <Toolbar
           tool={tool}
           color={color}
@@ -213,9 +384,25 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
           />
 
           <div className="bg-white border-t px-4 py-2">
-            <UserList users={users} currentUser={userName} />
+            <UserList
+              users={users}
+              currentUser={userName}
+              mySessionId={mySessionId}
+              voiceMicState={voiceMicState}
+              voiceEnabled={voiceEnabled}
+            />
           </div>
         </div>
+
+        {/* Chat Panel - Overlay on right side */}
+        <ChatPanel
+          roomId={roomId}
+          currentUser={userName}
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+          messages={chatMessages}
+          onSendMessage={handleSendChatMessage}
+        />
       </div>
     </div>
   );

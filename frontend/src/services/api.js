@@ -199,4 +199,21 @@ export const api = {
     }
     return handleJsonResponse(res, 'Failed to leave room');
   },
+
+  // Get chat message history for a room (paginated)
+  getChatHistory: async (roomId, page = 0, size = 50) => {
+    const res = await fetch(
+      `${API_BASE_URL}/api/rooms/${roomId}/messages?page=${page}&size=${size}`,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
+    if (res.status === 403) {
+      throw new Error('You are not allowed to view chat history.');
+    }
+    if (res.status === 404) {
+      throw new Error('Room not found.');
+    }
+    return handleJsonResponse(res, 'Failed to load chat history');
+  },
 };

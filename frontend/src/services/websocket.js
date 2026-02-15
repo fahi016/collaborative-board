@@ -72,7 +72,7 @@ class WebSocketService {
         }
       },
 
-      debug: (msg) => console.log('[STOMP]', msg),
+      debug: () => {}, // disable STOMP frame logging (set to (msg) => console.log('[STOMP]', msg) to debug)
     });
 
     this.client.activate();
@@ -135,6 +135,33 @@ class WebSocketService {
     });
 
     this.joinedRooms.delete(roomId);
+  }
+
+  /** Send WebRTC signal (offer/answer/ice-candidate) to be relayed to target peer */
+  sendVoiceSignal(roomId, payload) {
+    if (!this.connected || !this.client) return;
+    this.client.publish({
+      destination: `/app/room/${roomId}/voice/signal`,
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Broadcast mic muted state to the room */
+  sendVoiceMic(roomId, muted) {
+    if (!this.connected || !this.client) return;
+    this.client.publish({
+      destination: `/app/room/${roomId}/voice/mic`,
+      body: JSON.stringify({ muted }),
+    });
+  }
+
+  /** Send chat message to room */
+  sendChatMessage(roomId, content) {
+    if (!this.connected || !this.client) return;
+    this.client.publish({
+      destination: `/app/room/${roomId}/chat`,
+      body: JSON.stringify({ content }),
+    });
   }
 }
 

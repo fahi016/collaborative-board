@@ -2,6 +2,7 @@ package com.collab.backend.service;
 
 import com.collab.backend.dto.JoinRoomResponse;
 import com.collab.backend.exception.RoomFullException;
+import com.collab.backend.exception.RoomNotFoundException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
 import com.collab.backend.model.User;
@@ -47,6 +48,8 @@ public class UserService {
             sessionId = UUID.randomUUID().toString();
         }
 
+        // Sync room.current_users with actual active_user count (self-heal if out of sync)
+        roomService.syncCurrentUserCount(roomId);
         Room room = roomService.getRoomByIdForUpdate(roomId);
 
         Optional<ActiveUser> existingUserGlobal = repository.findByUserName(userName);
@@ -68,17 +71,17 @@ public class UserService {
             }
         }
 
-        // THEN check room capacity
         if (room.isFull()) {
             throw new RoomFullException("Room is full");
         }
 
-        room.incrementUserCount();
-        roomService.save(room);
-
+        // Save user first so we never increment room count if save fails
         String color = generateUserColor();
         ActiveUser user = new ActiveUser(room, userName, sessionId, color);
         repository.save(user);
+
+        room.incrementUserCount();
+        roomService.save(room);
 
         return new JoinRoomResponse(
                 true,
@@ -89,41 +92,46 @@ public class UserService {
     }
 
     /**
-     * Remove user from room
+     * Remove user from room (idempotent - safe to call when both leave and disconnect fire).
      */
     public void removeUserFromRoom(String sessionId) {
         Optional<ActiveUser> userOpt = repository.findBySessionId(sessionId);
 
-        if (userOpt.isPresent()) {
-            ActiveUser user = userOpt.get();
-            Room room = user.getRoom();
-            String roomId = room.getRoomId();
+        if (userOpt.isEmpty()) {
+            logger.debug("User with session {} already removed", sessionId);
+            return;
+        }
 
-            repository.delete(user);
-            roomService.decrementUserCount(room.getRoomId());
+        String roomId = userOpt.get().getRoom().getRoomId();
 
-            Room updatedRoom = roomService.getRoomById(roomId);
+        // Bulk delete by sessionId so only one thread (leave vs disconnect) actually deletes
+        int deleted = repository.deleteBySessionId(sessionId);
+        if (deleted == 0) {
+            logger.debug("User with session {} already removed (race)", sessionId);
+            return;
+        }
 
-            if (updatedRoom.getCurrentUsers() == 0) {
+        roomService.decrementUserCount(roomId);
 
-                List<Object> actions =
-                        boardRedisService.getAllActions(roomId);
+        Room updatedRoom = roomService.getRoomById(roomId);
 
-                if (actions != null && !actions.isEmpty()) {
-                    try {
-                        String json = new com.fasterxml.jackson.databind.ObjectMapper()
-                                .writeValueAsString(actions);
+        if (updatedRoom.getCurrentUsers() == 0) {
+            // Last user left - persist board state
+            List<Object> actions = boardRedisService.getAllActions(roomId);
 
-                        boardService.updateBoardState(roomId, BoardService.DEFAULT_PAGE, json);
+            if (actions != null && !actions.isEmpty()) {
+                try {
+                    String json = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .writeValueAsString(actions);
 
-                    } catch (Exception e) {
-                        logger.error("Failed to persist board actions for room {}", roomId, e);
-                    }
+                    boardService.updateBoardState(roomId, BoardService.DEFAULT_PAGE, json);
+
+                } catch (Exception e) {
+                    logger.error("Failed to persist board actions for room {}", roomId, e);
                 }
-
-                boardRedisService.clearRoom(roomId);
             }
 
+            boardRedisService.clearRoom(roomId);
         }
     }
 
@@ -160,6 +168,18 @@ public class UserService {
 
     public boolean isSessionInRoom(String roomId, String sessionId) {
         return repository.existsByRoom_RoomIdAndSessionId(roomId, sessionId);
+    }
+
+    public Optional<String> getUsernameBySessionIdInRoom(String roomId, String sessionId) {
+        if (roomId == null || sessionId == null) return Optional.empty();
+        Room room;
+        try {
+            room = roomService.getRoomById(roomId);
+        } catch (RoomNotFoundException e) {
+            return Optional.empty();
+        }
+        return repository.findByRoomAndSessionId(room, sessionId)
+                .map(ActiveUser::getUserName);
     }
 
 

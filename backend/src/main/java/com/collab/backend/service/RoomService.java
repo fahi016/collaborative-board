@@ -86,6 +86,20 @@ public class RoomService {
         repository.save(room);
     }
 
+    /**
+     * Sync room.current_users with actual active_user count for this room.
+     * Call before join so "room full" uses up-to-date count (self-heal if out of sync).
+     */
+    public void syncCurrentUserCount(String roomId) {
+        Room room = getRoomByIdForUpdate(roomId);
+        long actual = activeUserRepository.countByRoom(room);
+        int current = room.getCurrentUsers() != null ? room.getCurrentUsers() : 0;
+        if (actual != current) {
+            room.setCurrentUsers((int) Math.min(actual, Integer.MAX_VALUE));
+            repository.save(room);
+        }
+    }
+
     private static final int ROOM_ID_MAX_RETRIES = 5;
 
     /**
