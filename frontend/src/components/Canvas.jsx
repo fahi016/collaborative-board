@@ -246,7 +246,7 @@ const Canvas = forwardRef(({ tool, color, userColor, onAction }, ref) => {
   };
 
   return (
-    <div className="flex-1 bg-white relative">
+    <div className="flex-1 bg-slate-900 relative">
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}

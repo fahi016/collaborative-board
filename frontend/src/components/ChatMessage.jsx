@@ -41,35 +41,35 @@ function ChatMessage({ message, isOwnMessage }) {
 
   return (
     <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+      <div className={`max-w-[80%] ${isOwnMessage ? 'order-2' : 'order-1'}`}>
         {/* Sender name and time */}
-        <div className={`flex items-center space-x-2 mb-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+        <div className={`flex items-center space-x-2 mb-1.5 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
           {!isOwnMessage && (
             <div
-              className="w-2 h-2 rounded-full flex-shrink-0"
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-slate-800 shadow-elevation-1"
               style={{ backgroundColor: senderColor }}
             />
           )}
           <span
-            className="text-xs font-medium"
-            style={{ color: isOwnMessage ? '#3B82F6' : senderColor }}
+            className="text-xs font-bold"
+            style={{ color: isOwnMessage ? '#60A5FA' : senderColor }}
           >
             {isOwnMessage ? 'You' : message.senderName}
           </span>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-slate-500">
             {formattedTime}
           </span>
         </div>
 
         {/* Message bubble */}
         <div
-          className={`px-3 py-2 rounded-lg ${
+          className={`px-4 py-3 rounded-2xl shadow-elevation-1 ${
             isOwnMessage
-              ? 'bg-blue-600 text-white rounded-br-none'
-              : 'bg-gray-100 text-gray-800 rounded-bl-none'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-md'
+              : 'bg-slate-700 text-white border border-slate-600 rounded-bl-md'
           }`}
         >
-          <p className="text-sm whitespace-pre-wrap break-words">
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
             {message.content}
           </p>
         </div>

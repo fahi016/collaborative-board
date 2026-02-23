@@ -18,17 +18,17 @@ function Toolbar({ tool, color, onToolChange, onColorChange }) {
   ];
 
   return (
-    <div className="w-20 bg-gray-800 flex flex-col items-center py-4 space-y-4">
+    <div className="w-20 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-6 space-y-6 relative z-10 shadow-elevation-1">
       {/* Tools */}
-      <div className="flex flex-col space-y-2">
+      <div className="flex flex-col space-y-3">
         {tools.map((t) => (
           <button
             key={t.id}
             onClick={() => onToolChange(t.id)}
-            className={`w-14 h-14 rounded-lg flex items-center justify-center transition ${
+            className={`w-14 h-14 rounded-xl flex items-center justify-center transition-smooth ${
               tool === t.id
-                ? 'bg-blue-500 text-white shadow-lg'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-elevation-2 scale-105'
+                : 'bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600 hover:scale-105 hover:shadow-elevation-1'
             }`}
             title={t.name}
           >
@@ -38,19 +38,19 @@ function Toolbar({ tool, color, onToolChange, onColorChange }) {
       </div>
 
       {/* Divider */}
-      <div className="w-12 border-t border-gray-600" />
+      <div className="w-12 border-t border-slate-700" />
 
       {/* Colors (only for pen and text tools) */}
       {(tool === 'pen' || tool === 'text') && (
-        <div className="flex flex-col space-y-2">
+        <div className="flex flex-col space-y-3">
           {colors.map((c) => (
             <button
               key={c}
               onClick={() => onColorChange(c)}
-              className={`w-10 h-10 rounded-full border-2 transition ${
+              className={`w-10 h-10 rounded-full border-2 transition-smooth ${
                 color === c
-                  ? 'border-white shadow-lg scale-110'
-                  : 'border-gray-600 hover:scale-105'
+                  ? 'border-white shadow-elevation-2 scale-110 ring-2 ring-blue-400/50'
+                  : 'border-slate-600 hover:scale-105 hover:border-slate-500 hover:shadow-elevation-1'
               }`}
               style={{ backgroundColor: c }}
               title={c}

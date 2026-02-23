@@ -335,7 +335,7 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   }, [roomId, userName, showToast]);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-gray-50">
+    <div className="h-screen w-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Remote voice streams (hidden; audio only) */}
       {voiceEnabled &&
         users
@@ -383,7 +383,7 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
             onAction={handleAction}
           />
 
-          <div className="bg-white border-t px-4 py-2">
+          <div className="bg-slate-800 border-t border-slate-700 px-6 py-3 shadow-elevation-1">
             <UserList
               users={users}
               currentUser={userName}

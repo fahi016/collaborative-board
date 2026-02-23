@@ -51,7 +51,7 @@ function AppContent() {
 
   // Show board or room selection if authenticated
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gray-100">
+    <div className="h-screen w-screen overflow-hidden bg-slate-900">
       {!roomId ? (
         <MyRooms onJoinRoom={handleJoinRoom} />
       ) : (
