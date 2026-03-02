@@ -4,75 +4,42 @@ import { useMemo } from 'react';
 function ChatMessage({ message, isOwnMessage }) {
   const formattedTime = useMemo(() => {
     if (!message.createdAt) return '';
-
     const date = new Date(message.createdAt);
     const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    // Show date for older messages
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {})
-    });
+    const diffMins = Math.floor((now - date) / 60000);
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }, [message.createdAt]);
 
-  // Generate a consistent color based on sender name (for non-own messages)
   const senderColor = useMemo(() => {
-    if (isOwnMessage) return '#3B82F6'; // Blue for own messages
-
-    // Generate a color from the sender name
+    if (isOwnMessage) return '#ffffff';
     let hash = 0;
-    for (let i = 0; i < message.senderName.length; i++) {
+    for (let i = 0; i < message.senderName.length; i++)
       hash = message.senderName.charCodeAt(i) + ((hash << 5) - hash);
-    }
-
-    const hue = hash % 360;
-    return `hsl(${hue}, 60%, 50%)`;
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 55%, 65%)`;
   }, [message.senderName, isOwnMessage]);
 
   return (
-    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] ${isOwnMessage ? 'order-2' : 'order-1'}`}>
-        {/* Sender name and time */}
-        <div className={`flex items-center space-x-2 mb-1.5 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-          {!isOwnMessage && (
-            <div
-              className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-slate-800 shadow-elevation-1"
-              style={{ backgroundColor: senderColor }}
-            />
-          )}
-          <span
-            className="text-xs font-bold"
-            style={{ color: isOwnMessage ? '#60A5FA' : senderColor }}
-          >
-            {isOwnMessage ? 'You' : message.senderName}
-          </span>
-          <span className="text-xs text-slate-500">
-            {formattedTime}
-          </span>
-        </div>
-
-        {/* Message bubble */}
-        <div
-          className={`px-4 py-3 rounded-2xl shadow-elevation-1 ${
-            isOwnMessage
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-md'
-              : 'bg-slate-700 text-white border border-slate-600 rounded-bl-md'
-          }`}
-        >
-          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-            {message.content}
-          </p>
-        </div>
+    <div className={`flex flex-col gap-1 ${isOwnMessage ? 'items-end' : 'items-start'}`}>
+      <div className={`flex items-center gap-2 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+        <span className="text-xs font-semibold" style={{ color: senderColor }}>
+          {isOwnMessage ? 'You' : message.senderName}
+        </span>
+        <span className="mono text-xs" style={{ color: '#444' }}>{formattedTime}</span>
+      </div>
+      <div
+        className="max-w-[80%] rounded-xl px-3 py-2 text-sm leading-relaxed"
+        style={
+          isOwnMessage
+            ? { background: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)', color: '#f0f0f0', borderBottomRightRadius: '4px' }
+            : { background: '#141414', border: '1px solid rgba(255,255,255,0.06)', color: '#ccc', borderBottomLeftRadius: '4px' }
+        }
+      >
+        <p className="whitespace-pre-wrap break-words">{message.content}</p>
       </div>
     </div>
   );

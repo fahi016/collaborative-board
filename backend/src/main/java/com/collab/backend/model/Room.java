@@ -25,7 +25,7 @@ public class Room {
     private LocalDateTime createdAt;
 
     @Column(name = "max_users")
-    private Integer maxUsers = 3;
+    private Integer maxUsers = 6;
 
     @Column(name = "current_users")
     private Integer currentUsers = 0;
@@ -42,7 +42,7 @@ public class Room {
         this.roomId = roomId;
         this.owner = owner;
         this.createdAt = LocalDateTime.now();
-        this.maxUsers = 3;
+        this.maxUsers = 6;
         this.currentUsers = 0;
         this.name = null;
     }
@@ -51,7 +51,7 @@ public class Room {
         this.roomId = roomId;
         this.owner = owner;
         this.createdAt = LocalDateTime.now();
-        this.maxUsers = 3;
+        this.maxUsers = 6;
         this.currentUsers = 0;
         this.name = name;
     }

@@ -1,7 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+
+// FIX: Removed the localStorage activeRoom guard entirely.
+// It was blocking users from rejoining after a tab refresh because:
+//   1. pagehide clears activeRoom, but React re-renders haven't run yet on refresh
+//   2. the guard read the still-set activeRoom and showed "already active in another tab"
+// The backend already enforces single-session-per-room via ghost session eviction,
+// so this frontend guard was both redundant AND harmful. The only real use case it
+// solved (blocking a second tab) is now handled server-side.
 
 function JoinRoomModal({ onJoinRoom }) {
   const [roomIdInput, setRoomIdInput] = useState('');
@@ -12,56 +20,12 @@ function JoinRoomModal({ onJoinRoom }) {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
 
-   const [activeRoomInfo, setActiveRoomInfo] = useState(null);
-
-   // Keep local active room info in sync with localStorage,
-   // so other tabs see the same state.
-   useEffect(() => {
-     const loadActiveRoom = () => {
-       try {
-         const raw = localStorage.getItem('activeRoom');
-         setActiveRoomInfo(raw ? JSON.parse(raw) : null);
-       } catch {
-         setActiveRoomInfo(null);
-       }
-     };
-
-     loadActiveRoom();
-
-     const handleStorage = (event) => {
-       if (event.key === 'activeRoom') {
-         loadActiveRoom();
-       }
-     };
-
-     window.addEventListener('storage', handleStorage);
-     return () => window.removeEventListener('storage', handleStorage);
-   }, []);
-
-   const isUserAlreadyActive =
-     !!activeRoomInfo && activeRoomInfo.userEmail === user?.email;
-
   const handleCreateRoom = async () => {
-    // Frontend guard: same authenticated user should not
-    // create/join another room from a different tab/window.
-    if (isUserAlreadyActive) {
-      const msg = `You are already active in room ${activeRoomInfo.roomId} in another tab. Please close that tab or reset your status before creating a new room.`;
-      setError(msg);
-      showToast(msg, 'error');
-      return;
-    }
-
     setLoading(true);
     setError('');
-
     try {
-      // Create room (REST)
       const roomData = await api.createRoom();
-
       showToast(`Room ${roomData.roomId} created`, 'success');
-
-      // Move directly to board; WebSocket will handle presence/join
-      // Use authenticated user's name so backend can enforce "one room per user"
       onJoinRoom(roomData.roomId, user?.name || '');
     } catch (err) {
       const msg = err.message || 'Failed to create room';
@@ -78,20 +42,10 @@ function JoinRoomModal({ onJoinRoom }) {
       return;
     }
 
-    // Frontend guard: same authenticated user should not
-    // join another room (or same room) in a different tab.
-    if (isUserAlreadyActive) {
-      const msg = `You are already active in room ${activeRoomInfo.roomId} in another tab. Please close that tab or reset your status before joining a room.`;
-      setError(msg);
-      showToast(msg, 'error');
-      return;
-    }
-
     setLoading(true);
     setError('');
 
     try {
-      // Validate room exists and is not full
       const info = await api.getRoomInfo(roomIdInput.toUpperCase());
 
       const currentUsers = info.currentUsers ?? info.currentusers;
@@ -105,14 +59,12 @@ function JoinRoomModal({ onJoinRoom }) {
           currentUsers >= maxUsers);
 
       if (isRoomFull) {
-        const msg = 'This room is full (max 3 users).';
+        const msg = 'This room is full (max 6 users).';
         setError(msg);
         showToast(msg, 'error');
         return;
       }
 
-      // Move to board; WebSocket join will be done in CollaborativeBoard
-      // Use authenticated user's name so backend can enforce "one room per user"
       onJoinRoom(roomIdInput.toUpperCase(), user?.name || '');
       showToast(`Joined room ${roomIdInput.toUpperCase()}`, 'success');
     } catch (err) {
@@ -146,9 +98,6 @@ function JoinRoomModal({ onJoinRoom }) {
             Logout
           </button>
         </div>
-
-
-        {/* Name is now fixed to authenticated user to enforce one-room-per-user */}
 
         {/* Create or Join Toggle */}
         <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
@@ -205,20 +154,8 @@ function JoinRoomModal({ onJoinRoom }) {
           {loading ? (
             <span className="flex items-center justify-center">
               <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                  fill="none"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
               {isCreating ? 'Creating...' : 'Joining...'}
             </span>
@@ -230,7 +167,7 @@ function JoinRoomModal({ onJoinRoom }) {
         </button>
 
         <p className="text-xs text-center text-gray-500 mt-6">
-          Max 3 users per room • Page 1 only
+          Max 6 users per room
         </p>
       </div>
     </div>

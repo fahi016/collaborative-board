@@ -92,4 +92,9 @@ public class ChatService {
                 m.getCreatedAt()
         );
     }
+
+    @Transactional
+    public void deleteByRoom_RoomId(String roomId) {
+        chatMessageRepository.deleteByRoom_RoomId(roomId);
+    }
 }

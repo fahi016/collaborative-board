@@ -11,8 +11,10 @@ import com.collab.backend.repository.ActiveUserRepository;
 import com.collab.backend.repository.BoardStateRepository;
 import com.collab.backend.repository.RoomRepository;
 import com.collab.backend.service.BoardRedisService;
+import com.collab.backend.service.ChatService;
 import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -30,6 +32,7 @@ public class RoomService {
     private final ActiveUserRepository activeUserRepository;
     private final BoardStateRepository boardStateRepository;
     private final BoardRedisService boardRedisService;
+    private final ChatService chatService;
 
 
     public RoomCreateResponse createRoom(User owner, String name) {
@@ -125,83 +128,83 @@ public class RoomService {
 
 
 
-        public List<UserRoomSummary> getRoomsForUser(User user) {
-            Map<String, UserRoomSummary> result = new LinkedHashMap<>();
+    public List<UserRoomSummary> getRoomsForUser(User user) {
+        Map<String, UserRoomSummary> result = new LinkedHashMap<>();
 
-            // 1) Rooms the user owns (if you've added owner to Room)
-            List<Room> ownedRooms = repository.findByOwnerOrderByCreatedAtDesc(user);
-            for (Room room : ownedRooms) {
-                result.put(room.getRoomId(), new UserRoomSummary(
-                        room.getRoomId(),
-                        room.getName(),
-                        room.getCurrentUsers(),
-                        room.getMaxUsers(),
-                        room.getCreatedAt(),
-                        room.isFull(),
-                        true,
-                        null // lastJoinedAt not needed for owner or can be createdAt
-                ));
-            }
-
-            // 2) Rooms the user has joined
-            List<RoomParticipant> memberships = roomParticipantService.getParticipantsForUser(user);
-            for (RoomParticipant membership : memberships) {
-                Room room = membership.getRoom();
-                // If already in map as owner, just update lastJoinedAt if present
-                result.merge(
-                        room.getRoomId(),
-                        new UserRoomSummary(
-                                room.getRoomId(),
-                                room.getName(),
-                                room.getCurrentUsers(),
-                                room.getMaxUsers(),
-                                room.getCreatedAt(),
-                                room.isFull(),
-                                false,
-                                membership.getLastJoinedAt()
-                        ),
-                        (existing, incoming) -> {
-                            // Keep owner=true if any record says owner
-                            boolean owner = existing.isOwner() || incoming.isOwner();
-                            LocalDateTime lastJoinedAt =
-                                    existing.getLastJoinedAt() != null
-                                            ? existing.getLastJoinedAt()
-                                            : incoming.getLastJoinedAt();
-                            return new UserRoomSummary(
-                                    existing.getRoomId(),
-                                    existing.getName(),
-                                    existing.getCurrentUsers(),
-                                    existing.getMaxUsers(),
-                                    existing.getCreatedAt(),
-                                    existing.isFull(),
-                                    owner,
-                                    lastJoinedAt
-                            );
-                        }
-                );
-            }
-
-            // Optional: sort by createdAt or lastJoinedAt
-            return result.values().stream()
-                    .sorted(Comparator.comparing(
-                            (UserRoomSummary r) -> Optional.ofNullable(r.getLastJoinedAt()).orElse(r.getCreatedAt())
-                    ).reversed())
-                    .collect(Collectors.toList());
+        // 1) Rooms the user owns (if you've added owner to Room)
+        List<Room> ownedRooms = repository.findByOwnerOrderByCreatedAtDesc(user);
+        for (Room room : ownedRooms) {
+            result.put(room.getRoomId(), new UserRoomSummary(
+                    room.getRoomId(),
+                    room.getName(),
+                    room.getCurrentUsers(),
+                    room.getMaxUsers(),
+                    room.getCreatedAt(),
+                    room.isFull(),
+                    true,
+                    null // lastJoinedAt not needed for owner or can be createdAt
+            ));
         }
+
+        // 2) Rooms the user has joined
+        List<RoomParticipant> memberships = roomParticipantService.getParticipantsForUser(user);
+        for (RoomParticipant membership : memberships) {
+            Room room = membership.getRoom();
+            // If already in map as owner, just update lastJoinedAt if present
+            result.merge(
+                    room.getRoomId(),
+                    new UserRoomSummary(
+                            room.getRoomId(),
+                            room.getName(),
+                            room.getCurrentUsers(),
+                            room.getMaxUsers(),
+                            room.getCreatedAt(),
+                            room.isFull(),
+                            false,
+                            membership.getLastJoinedAt()
+                    ),
+                    (existing, incoming) -> {
+                        // Keep owner=true if any record says owner
+                        boolean owner = existing.isOwner() || incoming.isOwner();
+                        LocalDateTime lastJoinedAt =
+                                existing.getLastJoinedAt() != null
+                                        ? existing.getLastJoinedAt()
+                                        : incoming.getLastJoinedAt();
+                        return new UserRoomSummary(
+                                existing.getRoomId(),
+                                existing.getName(),
+                                existing.getCurrentUsers(),
+                                existing.getMaxUsers(),
+                                existing.getCreatedAt(),
+                                existing.isFull(),
+                                owner,
+                                lastJoinedAt
+                        );
+                    }
+            );
+        }
+
+        // Optional: sort by createdAt or lastJoinedAt
+        return result.values().stream()
+                .sorted(Comparator.comparing(
+                        (UserRoomSummary r) -> Optional.ofNullable(r.getLastJoinedAt()).orElse(r.getCreatedAt())
+                ).reversed())
+                .collect(Collectors.toList());
+    }
 
     /**
      * Update room name (only owner can update)
      */
     public Room updateRoom(String roomId, User user, String newName) {
         Room room = getRoomByIdWithOwner(roomId);
-        
+
         // Check if user is the owner
         if (!room.getOwner().getId().equals(user.getId())) {
-            throw new org.springframework.security.access.AccessDeniedException(
+            throw new AccessDeniedException(
                     "Only the room owner can update the room"
             );
         }
-        
+
         room.setName(newName);
         return repository.save(room);
     }
@@ -211,26 +214,31 @@ public class RoomService {
      */
     public void deleteRoom(String roomId, User user) {
         Room room = getRoomByIdWithOwner(roomId);
-        
+
         // Check if user is the owner
         if (!room.getOwner().getId().equals(user.getId())) {
-            throw new org.springframework.security.access.AccessDeniedException(
+            throw new AccessDeniedException(
                     "Only the room owner can delete the room"
             );
         }
-        
+
         // Delete all active users first (to avoid foreign key constraint violation)
         activeUserRepository.deleteByRoom_RoomId(roomId);
-        
+
         // Clear Redis data for this room
         boardRedisService.clearRoom(roomId);
-        
+
         // Delete all board states for this room
         boardStateRepository.deleteByRoom_RoomId(roomId);
-        
+
+        // FIX: Delete chat messages within this same transaction.
+        // Previously called from RoomController before this method, meaning chat
+        // deletion and room deletion were two separate transactions — no atomicity.
+        chatService.deleteByRoom_RoomId(roomId);
+
         // Delete all participants
         roomParticipantService.deleteAllParticipants(room);
-        
+
         // Delete the room
         repository.delete(room);
     }
@@ -243,19 +251,27 @@ public class RoomService {
                 .orElseThrow(() -> new RoomNotFoundException("Room not found: " + roomId));
     }
 
+    public boolean canAccessRoom(User user, String roomId) {
+        Room room = getRoomByIdWithOwner(roomId);
+        boolean isOwner = room.getOwner().getId().equals(user.getId());
+        boolean isParticipant = roomParticipantService.isParticipant(room, user);
+        boolean isActiveInRoom = activeUserRepository.existsByRoom_RoomIdAndUserName(roomId, user.getEmail());
+        return isOwner || isParticipant || isActiveInRoom;
+    }
+
     /**
      * Leave a room (remove participant record)
      */
     public void leaveRoom(String roomId, User user) {
         Room room = getRoomByIdWithOwner(roomId);
-        
+
         // Check if user is the owner - owners cannot leave, they must delete
         if (room.getOwner().getId().equals(user.getId())) {
             throw new IllegalArgumentException(
                     "Room owners cannot leave their own room. Please delete the room instead."
             );
         }
-        
+
         // Remove participant record
         roomParticipantService.removeParticipant(room, user);
     }

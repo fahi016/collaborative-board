@@ -3,243 +3,132 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 function Register({ onSwitchToLogin }) {
-    const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        password: '',
-        confirmPassword: ''
-    });
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-    const { register } = useAuth();
-    const { showToast } = useToast();
+  const { register } = useAuth();
+  const { showToast } = useToast();
 
-    const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
-    };
+  const handleChange = e => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.name.trim() || !formData.email.trim() || !formData.password.trim() || !formData.confirmPassword.trim()) {
+      setError('Please fill in all fields'); return;
+    }
+    if (formData.password !== formData.confirmPassword) { setError('Passwords do not match'); return; }
+    if (formData.password.length < 6) { setError('Password must be at least 6 characters'); return; }
 
-        if (!formData.name.trim() || !formData.email.trim() ||
-            !formData.password.trim() || !formData.confirmPassword.trim()) {
-            setError('Please fill in all fields');
-            return;
-        }
+    setLoading(true); setError('');
+    try {
+      await register(formData.email, formData.password, formData.confirmPassword, formData.name);
+      showToast('Account created', 'success');
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : 'Registration failed';
+      setError(msg); showToast(msg, 'error');
+    } finally { setLoading(false); }
+  };
 
-        if (formData.password !== formData.confirmPassword) {
-            setError('Passwords do not match');
-            return;
-        }
-
-        if (formData.password.length < 6) {
-            setError('Password must be at least 6 characters');
-            return;
-        }
-
-        setLoading(true);
-        setError('');
-
-        try {
-            await register(
-                formData.email,
-                formData.password,
-                formData.confirmPassword,
-                formData.name
-            );
-            showToast('Account created successfully', 'success');
-            // AuthContext will handle navigation
-        } catch (err) {
-            const msg = typeof err === 'string' ? err : 'Registration failed';
-            setError(msg);
-            showToast(msg, 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
-            {/* Minimal animated background */}
-            <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
-                <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+  return (
+    <div className="min-h-screen flex" style={{ background: '#0a0a0a' }}>
+      {/* Left panel */}
+      <div className="hidden lg:flex flex-col justify-between w-[420px] flex-shrink-0 p-10 border-r" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+        <div>
+          <div className="flex items-center gap-2.5 mb-16">
+            <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: '#fff' }}>
+              <svg className="w-4 h-4" fill="#0a0a0a" viewBox="0 0 24 24"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 5h2v-2h2v2h2v2h-2v2h-2v-2h-2v-2z"/></svg>
             </div>
+            <span className="font-bold text-white tracking-tight">Collab Board</span>
+          </div>
 
-            <div className="relative z-10 w-full max-w-md px-6">
-                <div className="bg-slate-800/90 backdrop-blur-xl rounded-2xl shadow-elevation-4 border border-slate-700/50 p-8 md:p-10">
-                    {/* Header */}
-                    <div className="text-center space-y-3 mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-elevation-2 mb-4">
-                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                            </svg>
-                        </div>
-                        <h1 className="text-3xl font-bold text-white">
-                            Create Account
-                        </h1>
-                        <p className="text-slate-400 text-sm">
-                            Join Collaborative Board and start collaborating
-                        </p>
-                    </div>
+          <div>
+            <p className="text-3xl font-bold text-white leading-snug mb-4">
+              Build ideas live<br />with your team.
+            </p>
+            <p className="text-sm leading-relaxed" style={{ color: '#666' }}>
+              Create an account to launch rooms, draw in real-time, talk over voice, and keep chat in sync.
+            </p>
 
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        {/* Name Input */}
-                        <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-slate-300">
-                                Full Name
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                </div>
-                                <input
-                                    type="text"
-                                    name="name"
-                                    value={formData.name}
-                                    onChange={handleChange}
-                                    placeholder="John Doe"
-                                    maxLength={100}
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-smooth"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Email Input */}
-                        <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-slate-300">
-                                Email Address
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
-                                    </svg>
-                                </div>
-                                <input
-                                    type="email"
-                                    name="email"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    placeholder="you@example.com"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-smooth"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Password Input */}
-                        <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-slate-300">
-                                Password
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                    </svg>
-                                </div>
-                                <input
-                                    type="password"
-                                    name="password"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    placeholder="Minimum 6 characters"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-smooth"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Confirm Password Input */}
-                        <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-slate-300">
-                                Confirm Password
-                            </label>
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                                    </svg>
-                                </div>
-                                <input
-                                    type="password"
-                                    name="confirmPassword"
-                                    value={formData.confirmPassword}
-                                    onChange={handleChange}
-                                    placeholder="Re-enter your password"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-smooth"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Error Message */}
-                        {error && (
-                            <div className="p-4 bg-red-900/30 border border-red-700/50 rounded-xl text-red-300 text-sm flex items-start space-x-2">
-                                <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        {/* Submit Button */}
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold rounded-xl shadow-elevation-2 hover:shadow-elevation-3 transition-smooth disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-elevation-2 flex items-center justify-center space-x-2"
-                        >
-                            {loading ? (
-                                <>
-                                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                                        <circle
-                                            className="opacity-25"
-                                            cx="12"
-                                            cy="12"
-                                            r="10"
-                                            stroke="currentColor"
-                                            strokeWidth="4"
-                                            fill="none"
-                                        />
-                                        <path
-                                            className="opacity-75"
-                                            fill="currentColor"
-                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                        />
-                                    </svg>
-                                    <span>Creating account...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <span>Create Account</span>
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                    </svg>
-                                </>
-                            )}
-                        </button>
-                    </form>
-
-                    {/* Switch to Login */}
-                    <div className="text-center pt-6 mt-6 border-t border-slate-700">
-                        <p className="text-sm text-slate-400">
-                            Already have an account?{' '}
-                            <button
-                                onClick={onSwitchToLogin}
-                                className="text-indigo-400 font-semibold hover:text-indigo-300 transition-colors"
-                            >
-                                Sign in here
-                            </button>
-                        </p>
-                    </div>
+            <div className="mt-8 grid grid-cols-2 gap-3">
+              {[
+                { label: 'Rooms', val: 'Private & secure' },
+                { label: 'Canvas', val: 'Live sync' },
+                { label: 'Voice', val: 'Built-in' },
+                { label: 'Chat', val: 'Persistent' },
+              ].map(item => (
+                <div key={item.label} className="rounded-lg p-3" style={{ background: '#111', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <p className="text-xs mb-1" style={{ color: '#555' }}>{item.label}</p>
+                  <p className="text-sm font-semibold text-white">{item.val}</p>
                 </div>
+              ))}
             </div>
+          </div>
         </div>
-    );
+
+        <p className="text-xs" style={{ color: '#444' }}>Max 6 users per room.</p>
+      </div>
+
+      {/* Right panel */}
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-white mb-1">Create account</h1>
+            <p className="text-sm" style={{ color: '#666' }}>Set up your profile in seconds.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#888' }}>FULL NAME</label>
+              <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="John Doe"
+                className="input-base w-full rounded-lg px-4 py-3 text-sm" maxLength={100} />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: '#888' }}>EMAIL</label>
+              <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="you@example.com"
+                className="input-base w-full rounded-lg px-4 py-3 text-sm" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#888' }}>PASSWORD</label>
+                <input type="password" name="password" value={formData.password} onChange={handleChange} placeholder="Min 6 chars"
+                  className="input-base w-full rounded-lg px-4 py-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#888' }}>CONFIRM</label>
+                <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} placeholder="Repeat"
+                  className="input-base w-full rounded-lg px-4 py-3 text-sm" />
+              </div>
+            </div>
+
+            {error && (
+              <div className="rounded-lg px-4 py-3 text-xs" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#fca5a5' }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full rounded-lg py-3 text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading && <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>}
+              {loading ? 'Creating account...' : 'Create account'}
+            </button>
+          </form>
+
+          <div className="divider my-6" />
+
+          <p className="text-sm text-center" style={{ color: '#555' }}>
+            Already have an account?{' '}
+            <button onClick={onSwitchToLogin} className="text-white font-semibold hover:opacity-70 t">Sign in</button>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default Register;

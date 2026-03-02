@@ -1,89 +1,49 @@
 package com.collab.backend.exception;
 
-import lombok.RequiredArgsConstructor;
+import com.collab.backend.controller.WebSocketController.EvictedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.simp.annotation.SendToUser;
-import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 
-import java.security.Principal;
-import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Central exception handling for STOMP @MessageMapping methods.
- * Sends structured error payloads to /user/queue/errors so clients can show them.
- * CONNECT-time errors (e.g. invalid JWT in JwtChannelInterceptor) close the connection
- * before a user session exists; those are not handled here.
- */
 @ControllerAdvice
-@RequiredArgsConstructor
 public class WebSocketExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketExceptionHandler.class);
 
-    @MessageExceptionHandler(IllegalArgumentException.class)
-    @SendToUser(destinations = "/queue/errors", broadcast = false)
-    public Map<String, Object> handleIllegalArgument(IllegalArgumentException ex, Principal principal) {
-        logger.warn("WebSocket validation/argument error: {}", ex.getMessage());
-        return errorPayload("BAD_REQUEST", ex.getMessage(), principal);
+    /**
+     * FIX: Silently swallow EvictedSessionException — these come from ghost sessions
+     * that are physically still connected but have already been removed from the
+     * active_user table. We don't want to log WARN noise or send an error frame
+     * back to a dying connection (which would trigger frontend reconnect loops).
+     */
+    @MessageExceptionHandler(EvictedSessionException.class)
+    public void handleEvictedSession(EvictedSessionException ex) {
+        // Intentionally empty — ghost drain, nothing to do.
+        logger.debug("EvictedSessionException swallowed: {}", ex.getMessage());
     }
 
     @MessageExceptionHandler(IllegalStateException.class)
-    @SendToUser(destinations = "/queue/errors", broadcast = false)
-    public Map<String, Object> handleIllegalState(IllegalStateException ex, Principal principal) {
+    @SendToUser("/queue/errors")
+    public Map<String, Object> handleStateException(IllegalStateException ex) {
         logger.warn("WebSocket state error: {}", ex.getMessage());
-        return errorPayload("STATE_ERROR", ex.getMessage(), principal);
+        return Map.of("type", "error", "message", ex.getMessage());
     }
 
-    @MessageExceptionHandler(BindException.class)
-    @SendToUser(destinations = "/queue/errors", broadcast = false)
-    public Map<String, Object> handleValidation(BindException ex, Principal principal) {
-        Map<String, String> fieldErrors = new HashMap<>();
-        ex.getBindingResult().getFieldErrors()
-                .forEach(err -> fieldErrors.put(err.getField(), err.getDefaultMessage()));
-        logger.warn("WebSocket validation failed: {}", fieldErrors);
-        Map<String, Object> payload = errorPayload("VALIDATION_ERROR", "Invalid message payload", principal);
-        payload.put("fieldErrors", fieldErrors);
-        return payload;
-    }
-
-    @MessageExceptionHandler(RoomFullException.class)
-    @SendToUser(destinations = "/queue/errors", broadcast = false)
-    public Map<String, Object> handleRoomFull(RoomFullException ex, Principal principal) {
-        logger.debug("Room full (join rejected): {}", ex.getMessage());
-        return errorPayload("ROOM_FULL", ex.getMessage(), principal);
-    }
-
-    @MessageExceptionHandler(RoomNotFoundException.class)
-    @SendToUser(destinations = "/queue/errors", broadcast = false)
-    public Map<String, Object> handleRoomNotFound(RoomNotFoundException ex, Principal principal) {
-        logger.warn("Room not found (chat/action): {}", ex.getMessage());
-        return errorPayload("ROOM_NOT_FOUND", ex.getMessage(), principal);
+    @MessageExceptionHandler(IllegalArgumentException.class)
+    @SendToUser("/queue/errors")
+    public Map<String, Object> handleArgException(IllegalArgumentException ex) {
+        logger.warn("WebSocket arg error: {}", ex.getMessage());
+        return Map.of("type", "error", "message", ex.getMessage());
     }
 
     @MessageExceptionHandler(Exception.class)
-    @SendToUser(destinations = "/queue/errors", broadcast = false)
-    public Map<String, Object> handleGeneric(Exception ex, Principal principal) {
-        logger.error("WebSocket error: {}", ex.getMessage());
-        if (logger.isDebugEnabled()) {
-            logger.debug("WebSocket error stack", ex);
-        }
-        return errorPayload("INTERNAL_ERROR", "Something went wrong. Please try again.", principal);
-    }
-
-    private Map<String, Object> errorPayload(String code, String message, Principal principal) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("type", "error");
-        payload.put("code", code);
-        payload.put("message", message);
-        payload.put("timestamp", LocalDateTime.now().toString());
-        if (principal != null) {
-            payload.put("user", principal.getName());
-        }
-        return payload;
+    @SendToUser("/queue/errors")
+    public Map<String, Object> handleGenericException(Exception ex) {
+        logger.error("WebSocket unexpected error", ex);
+        return Map.of("type", "error", "message", "An unexpected error occurred");
     }
 }

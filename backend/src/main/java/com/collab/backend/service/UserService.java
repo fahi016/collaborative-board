@@ -5,7 +5,6 @@ import com.collab.backend.exception.RoomFullException;
 import com.collab.backend.exception.RoomNotFoundException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
-import com.collab.backend.model.User;
 import com.collab.backend.repository.ActiveUserRepository;
 import com.collab.backend.repository.UserRepository;
 import jakarta.transaction.Transactional;
@@ -40,129 +39,147 @@ public class UserService {
             "#33FFF5", "#FF8C33", "#8C33FF", "#33FF8C", "#FF3333"
     };
 
-    //Join room
-
+    /**
+     * Original join method — kept for callers that don't need eviction info.
+     */
     public JoinRoomResponse joinAuthenticatedUser(String roomId, String userName, String sessionId) {
+        joinAuthenticatedUserAndGetEvictedSession(roomId, userName, sessionId);
+        return getActiveJoinResponse(roomId, userName, sessionId);
+    }
+
+    /**
+     * FIX: New join variant that returns the evicted ghost sessionId (or null if none).
+     * WebSocketController uses this to register the old session for silent drain,
+     * suppressing the "User not in room" warn spam that occurred when the ghost's
+     * in-flight messages arrived after its DB record was deleted.
+     *
+     * @return evicted session ID, or null if no ghost was present
+     */
+    public String joinAuthenticatedUserAndGetEvictedSession(String roomId, String userName, String sessionId) {
 
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
         }
 
-        // Sync room.current_users with actual active_user count (self-heal if out of sync)
         roomService.syncCurrentUserCount(roomId);
         Room room = roomService.getRoomByIdForUpdate(roomId);
 
-        Optional<ActiveUser> existingUserGlobal = repository.findByUserName(userName);
+        // ── Idempotent re-join ─────────────────────────────────────────────────
+        if (repository.existsByRoom_RoomIdAndSessionId(roomId, sessionId)) {
+            ActiveUser existing = repository.findByRoomAndSessionId(room, sessionId)
+                    .orElseThrow();
+            existing.refreshHeartbeat();
+            repository.save(existing);
+            logger.info("Idempotent re-join user={} session={} room={}", userName, sessionId, roomId);
+            return null; // no eviction
+        }
 
-        if (existingUserGlobal.isPresent()) {
-            ActiveUser existing = existingUserGlobal.get();
-
-            if (existing.getRoom().getRoomId().equals(roomId)) {
-                throw new IllegalStateException(
-                        "User already active in this room from another tab"
-                );
-            }
-
+        // ── Ghost session in THIS room ─────────────────────────────────────────
+        String evictedSessionId = null;
+        Optional<ActiveUser> ghostInRoom = repository.findByRoom_RoomIdAndUserName(roomId, userName);
+        if (ghostInRoom.isPresent()) {
+            evictedSessionId = ghostInRoom.get().getSessionId();
+            logger.warn("Evicting ghost session for user={} room={} oldSession={} newSession={}",
+                    userName, roomId, evictedSessionId, sessionId);
+            repository.deleteByRoomIdAndUserName(roomId, userName);
+            // Don't touch currentUsers — we deleted one and will insert one below
+        } else {
+            // ── User already in a different room ──────────────────────────────
             if (!allowMultiRoomPerUser) {
-                throw new IllegalStateException(
-                        "User already active in another room: "
-                                + existing.getRoom().getRoomId()
-                );
+                Optional<ActiveUser> inOtherRoom = repository.findByUserName(userName);
+                if (inOtherRoom.isPresent()) {
+                    String otherRoomId = inOtherRoom.get().getRoom().getRoomId();
+                    logger.warn("User={} already in room={}, rejecting join to room={}",
+                            userName, otherRoomId, roomId);
+                    throw new IllegalStateException(
+                            "You are already active in another room. Please leave it first.");
+                }
+            }
+
+            if (room.isFull()) {
+                throw new RoomFullException("Room is full");
             }
         }
 
-        if (room.isFull()) {
-            throw new RoomFullException("Room is full");
-        }
-
-        // Save user first so we never increment room count if save fails
+        // ── Create new ActiveUser record ───────────────────────────────────────
         String color = generateUserColor();
         ActiveUser user = new ActiveUser(room, userName, sessionId, color);
         repository.save(user);
 
-        room.incrementUserCount();
-        roomService.save(room);
+        if (evictedSessionId == null) {
+            // Truly new slot — increment
+            room.incrementUserCount();
+            roomService.save(room);
+        }
 
-        return new JoinRoomResponse(
-                true,
-                user.getUserName(),
-                user.getColor(),
-                user.getSessionId()
-        );
+        return evictedSessionId; // null if no ghost eviction occurred
     }
 
     /**
-     * Remove user from room (idempotent - safe to call when both leave and disconnect fire).
+     * Build a JoinRoomResponse from the now-current ActiveUser record.
+     * Called after joinAuthenticatedUserAndGetEvictedSession completes.
      */
-    public void removeUserFromRoom(String sessionId) {
+    public JoinRoomResponse getActiveJoinResponse(String roomId, String userName, String sessionId) {
+        Room room = roomService.getRoomById(roomId);
+        ActiveUser activeUser = repository.findByRoomAndSessionId(room, sessionId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "ActiveUser record missing after join for session=" + sessionId));
+        return new JoinRoomResponse(true, activeUser.getUserName(), activeUser.getColor(), activeUser.getSessionId());
+    }
+
+    /**
+     * Remove user by sessionId. Idempotent — safe to call from both explicit leave
+     * and SessionDisconnectEvent without double-decrement.
+     *
+     * @return the roomId the user was removed from, or null if the session was
+     *         not found (already cleaned up). Callers that need to broadcast a
+     *         user-list update should only do so when this returns non-null.
+     */
+    public String removeUserFromRoom(String sessionId) {
         Optional<ActiveUser> userOpt = repository.findBySessionId(sessionId);
 
         if (userOpt.isEmpty()) {
-            logger.debug("User with session {} already removed", sessionId);
-            return;
+            logger.debug("Session {} already removed or never existed", sessionId);
+            return null; // already gone — nothing to broadcast
         }
 
         String roomId = userOpt.get().getRoom().getRoomId();
 
-        // Bulk delete by sessionId so only one thread (leave vs disconnect) actually deletes
         int deleted = repository.deleteBySessionId(sessionId);
         if (deleted == 0) {
-            logger.debug("User with session {} already removed (race)", sessionId);
-            return;
+            logger.debug("Session {} removed by concurrent thread", sessionId);
+            return null; // concurrent cleanup beat us — nothing to broadcast
         }
 
         roomService.decrementUserCount(roomId);
 
         Room updatedRoom = roomService.getRoomById(roomId);
-
         if (updatedRoom.getCurrentUsers() == 0) {
-            // Last user left - persist board state
-            List<Object> actions = boardRedisService.getAllActions(roomId);
+            persistBoardAndClearRedis(roomId);
+        }
 
-            if (actions != null && !actions.isEmpty()) {
-                try {
-                    String json = new com.fasterxml.jackson.databind.ObjectMapper()
-                            .writeValueAsString(actions);
+        return roomId; // signal to caller: broadcast needed for this room
+    }
 
-                    boardService.updateBoardState(roomId, BoardService.DEFAULT_PAGE, json);
-
-                } catch (Exception e) {
-                    logger.error("Failed to persist board actions for room {}", roomId, e);
-                }
+    private void persistBoardAndClearRedis(String roomId) {
+        List<Object> actions = boardRedisService.getAllActions(roomId);
+        if (actions != null && !actions.isEmpty()) {
+            try {
+                String json = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .writeValueAsString(actions);
+                boardService.updateBoardState(roomId, BoardService.DEFAULT_PAGE, json);
+            } catch (Exception e) {
+                logger.error("Failed to persist board actions for room {}", roomId, e);
             }
-
-            boardRedisService.clearRoom(roomId);
         }
+        boardRedisService.clearRoom(roomId);
     }
 
-
-    public void removeUserBySimpSessionId(String simpSessionId) {
-        Optional<ActiveUser> userOpt =
-                repository.findBySessionId(simpSessionId);
-
-        if (userOpt.isPresent()) {
-            ActiveUser user = userOpt.get();
-            String roomId = user.getRoom().getRoomId();
-
-            repository.delete(user);
-            roomService.decrementUserCount(roomId);
-        }
-    }
-
-    /**
-     * Get active users in a room
-     */
     public List<ActiveUser> getUsersInRoom(String roomId) {
         return repository.findByRoom_RoomId(roomId);
     }
 
-    private String generateUserColor() {
-        Random random = new Random();
-        return COLORS[random.nextInt(COLORS.length)];
-    }
-
     public boolean isUserInRoom(String roomId, String username) {
-
         return repository.existsByRoom_RoomIdAndUserName(roomId, username);
     }
 
@@ -182,5 +199,7 @@ public class UserService {
                 .map(ActiveUser::getUserName);
     }
 
-
+    private String generateUserColor() {
+        return COLORS[new Random().nextInt(COLORS.length)];
+    }
 }

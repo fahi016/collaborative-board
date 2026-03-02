@@ -2,6 +2,7 @@ package com.collab.backend.controller;
 
 import com.collab.backend.dto.AuthResponse;
 import com.collab.backend.dto.LoginRequest;
+import com.collab.backend.dto.MeResponse;
 import com.collab.backend.dto.RegisterRequest;
 import com.collab.backend.service.AuthService;
 import jakarta.validation.Valid;
@@ -45,13 +46,13 @@ public class AuthController {
      * GET /api/auth/me
      */
     @GetMapping("/me")
-    public ResponseEntity<Map<String, Object>> getCurrentUser() {
+    public ResponseEntity<MeResponse> getCurrentUser() {
         var user = authService.getCurrentUser();
-        Map<String, Object> response = new HashMap<>();
-        response.put("id", user.getId());
-        response.put("email", user.getEmail());
-        response.put("name", user.getName());
-        response.put("role", user.getRole());
+        MeResponse response = new MeResponse();
+        response.setName(user.getName());
+        response.setEmail(user.getEmail());
+        response.setUserId(user.getId());
+        response.setRole(user.getRole());
         return ResponseEntity.ok(response);
     }
 }

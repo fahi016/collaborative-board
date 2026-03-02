@@ -1,5 +1,6 @@
 // src/hooks/useVoiceRoom.js
 import { useRef, useCallback, useEffect } from 'react';
+import { logger } from '../utils/logger';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
@@ -25,10 +26,10 @@ export function useVoiceRoom(
       });
 
       localStreamRef.current = stream;
-      console.log('✅ Microphone access granted', stream.getAudioTracks());
+      logger.debug('✅ Microphone access granted', stream.getAudioTracks());
       return stream;
     } catch (err) {
-      console.error('❌ Microphone access denied:', err);
+      logger.error('❌ Microphone access denied:', err);
       throw new Error('Microphone access denied. Please allow microphone access and try again.');
     }
   }, []);
@@ -37,7 +38,7 @@ export function useVoiceRoom(
   const closePeer = useCallback((sessionId) => {
     const pc = peerConnectionsRef.current[sessionId];
     if (pc) {
-      console.log('Closing peer connection:', sessionId);
+      logger.debug('Closing peer connection:', sessionId);
       pc.close();
       delete peerConnectionsRef.current[sessionId];
     }
@@ -48,29 +49,29 @@ export function useVoiceRoom(
     (remoteSessionId) => {
       // ✅ Safety check: Don't create peer to yourself
       if (remoteSessionId === mySessionId) {
-        console.warn('Skipping peer connection to self');
+        logger.warn('Skipping peer connection to self');
         return null;
       }
 
       if (peerConnectionsRef.current[remoteSessionId]) {
-        console.log('Reusing existing peer connection:', remoteSessionId);
+        logger.debug('Reusing existing peer connection:', remoteSessionId);
         return peerConnectionsRef.current[remoteSessionId];
       }
 
-      console.log('Creating new peer connection:', remoteSessionId);
+      logger.debug('Creating new peer connection:', remoteSessionId);
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
       // Add local tracks if available
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
           pc.addTrack(track, localStreamRef.current);
-          console.log('Added local track to peer:', remoteSessionId, track.kind);
+          logger.debug('Added local track to peer:', remoteSessionId, track.kind);
         });
       }
 
       // Handle incoming remote tracks
       pc.ontrack = (e) => {
-        console.log('✅ Track received from', remoteSessionId, e.streams[0]);
+        logger.debug('✅ Track received from', remoteSessionId, e.streams[0]);
 
         const audio = document.getElementById(`remote-audio-${remoteSessionId}`);
 
@@ -80,21 +81,21 @@ export function useVoiceRoom(
           // ✅ Attempt autoplay with fallback
           audio.play()
             .then(() => {
-              console.log('✅ Playing audio from', remoteSessionId);
+              logger.debug('✅ Playing audio from', remoteSessionId);
             })
             .catch((err) => {
-              console.warn('⚠️ Autoplay blocked for', remoteSessionId, err);
+              logger.warn('⚠️ Autoplay blocked for', remoteSessionId, err);
               // User must interact with page for audio to play
             });
         } else {
-          console.warn('⚠️ Audio element not found for', remoteSessionId);
+          logger.warn('⚠️ Audio element not found for', remoteSessionId);
         }
       };
 
       // Handle ICE candidates
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          console.log('Sending ICE candidate to', remoteSessionId);
+          logger.debug('Sending ICE candidate to', remoteSessionId);
           onVoiceSignal({
             type: 'ice-candidate',
             targetSessionId: remoteSessionId,
@@ -105,7 +106,7 @@ export function useVoiceRoom(
 
       // Handle connection state changes
       pc.onconnectionstatechange = () => {
-        console.log(
+        logger.debug(
           'Connection state with',
           remoteSessionId,
           '→',
@@ -113,19 +114,19 @@ export function useVoiceRoom(
         );
 
         if (pc.connectionState === 'connected') {
-          console.log('✅ Peer connected:', remoteSessionId);
+          logger.debug('✅ Peer connected:', remoteSessionId);
         } else if (
           pc.connectionState === 'failed' ||
           pc.connectionState === 'disconnected'
         ) {
-          console.warn('⚠️ Peer connection failed/disconnected:', remoteSessionId);
+          logger.warn('⚠️ Peer connection failed/disconnected:', remoteSessionId);
           closePeer(remoteSessionId);
         }
       };
 
       // Handle ICE connection state
       pc.oniceconnectionstatechange = () => {
-        console.log(
+        logger.debug(
           'ICE connection state with',
           remoteSessionId,
           '→',
@@ -143,11 +144,11 @@ export function useVoiceRoom(
   const startVoice = useCallback(async () => {
     // ✅ Safety check
     if (!mySessionId) {
-      console.warn('Cannot start voice: no sessionId yet');
+      logger.warn('Cannot start voice: no sessionId yet');
       throw new Error('Session not ready. Please try again.');
     }
 
-    console.log('Starting voice. My session:', mySessionId);
+    logger.debug('Starting voice. My session:', mySessionId);
 
     // Get microphone access first
     await getLocalStream();
@@ -155,11 +156,11 @@ export function useVoiceRoom(
     // Find other users (exclude self)
     const others = users.filter((u) => u.sessionId && u.sessionId !== mySessionId);
 
-    console.log('Creating offers for', others.length, 'users:', others);
+    logger.debug('Creating offers for', others.length, 'users:', others);
 
     // Create peer connections and send offers to all other users
     for (const user of others) {
-      console.log('Creating offer for', user.sessionId, user.userName);
+      logger.debug('Creating offer for', user.sessionId, user.userName);
 
       const pc = createPeerConnection(user.sessionId);
       if (!pc) continue;
@@ -170,14 +171,14 @@ export function useVoiceRoom(
         });
         await pc.setLocalDescription(offer);
 
-        console.log('Sending offer to', user.sessionId);
+        logger.debug('Sending offer to', user.sessionId);
         onVoiceSignal({
           type: 'offer',
           targetSessionId: user.sessionId,
           payload: pc.localDescription.sdp,
         });
       } catch (err) {
-        console.error('Failed to create offer for', user.sessionId, err);
+        logger.error('Failed to create offer for', user.sessionId, err);
       }
     }
   }, [users, mySessionId, getLocalStream, createPeerConnection, onVoiceSignal]);
@@ -187,17 +188,17 @@ export function useVoiceRoom(
     async (msg) => {
       const { type, payload, fromSessionId } = msg;
 
-      console.log('Incoming signal:', type, 'from', fromSessionId);
+      logger.debug('Incoming signal:', type, 'from', fromSessionId);
 
       // ✅ Safety check
       if (!mySessionId) {
-        console.warn('Cannot handle signal: no sessionId yet');
+        logger.warn('Cannot handle signal: no sessionId yet');
         return;
       }
 
       // ✅ Ignore signals from self
       if (fromSessionId === mySessionId) {
-        console.warn('Ignoring signal from self');
+        logger.warn('Ignoring signal from self');
         return;
       }
 
@@ -206,11 +207,11 @@ export function useVoiceRoom(
 
       try {
         if (type === 'offer') {
-          console.log('Handling offer from', fromSessionId);
+          logger.debug('Handling offer from', fromSessionId);
 
           // Ensure we have local stream before answering
           if (!localStreamRef.current) {
-            console.log('Getting local stream before answering');
+            logger.debug('Getting local stream before answering');
             await getLocalStream();
             
             // Re-add tracks to this peer connection
@@ -229,36 +230,36 @@ export function useVoiceRoom(
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
 
-          console.log('Sending answer to', fromSessionId);
+          logger.debug('Sending answer to', fromSessionId);
           onVoiceSignal({
             type: 'answer',
             targetSessionId: fromSessionId,
             payload: pc.localDescription.sdp,
           });
         } else if (type === 'answer') {
-          console.log('Handling answer from', fromSessionId);
+          logger.debug('Handling answer from', fromSessionId);
 
           await pc.setRemoteDescription({
             type: 'answer',
             sdp: payload,
           });
 
-          console.log('✅ Answer applied for', fromSessionId);
+          logger.debug('✅ Answer applied for', fromSessionId);
         } else if (type === 'ice-candidate') {
-          console.log('Handling ICE candidate from', fromSessionId);
+          logger.debug('Handling ICE candidate from', fromSessionId);
 
           try {
             const candidate =
               typeof payload === 'string' ? JSON.parse(payload) : payload;
 
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            console.log('✅ ICE candidate added for', fromSessionId);
+            logger.debug('✅ ICE candidate added for', fromSessionId);
           } catch (err) {
-            console.warn('Failed to add ICE candidate:', err);
+            logger.warn('Failed to add ICE candidate:', err);
           }
         }
       } catch (err) {
-        console.error('Error handling signal from', fromSessionId, err);
+        logger.error('Error handling signal from', fromSessionId, err);
       }
     },
     [mySessionId, createPeerConnection, onVoiceSignal, getLocalStream] // ✅ Added mySessionId
@@ -272,12 +273,12 @@ export function useVoiceRoom(
       t.enabled = !muted;
     });
 
-    console.log(muted ? '🔇 Muted' : '🔊 Unmuted');
+    logger.debug(muted ? '🔇 Muted' : '🔊 Unmuted');
   }, []);
 
   // 🔹 Leave voice
   const leaveVoice = useCallback(() => {
-    console.log('Leaving voice chat');
+    logger.debug('Leaving voice chat');
 
     // Close all peer connections
     Object.keys(peerConnectionsRef.current).forEach((sid) => {
@@ -287,11 +288,11 @@ export function useVoiceRoom(
     // Stop local stream
     localStreamRef.current?.getTracks().forEach((t) => {
       t.stop();
-      console.log('Stopped local track:', t.kind);
+      logger.debug('Stopped local track:', t.kind);
     });
     localStreamRef.current = null;
 
-    console.log('✅ Left voice chat');
+    logger.debug('✅ Left voice chat');
   }, [closePeer]);
 
   // Cleanup on unmount

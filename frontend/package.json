@@ -12,6 +12,7 @@
   "dependencies": {
     "@stomp/stompjs": "^7.0.0",
     "axios": "^1.13.5",
+    "google-fonts": "^1.0.0",
     "liquid-glass-react": "^1.1.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

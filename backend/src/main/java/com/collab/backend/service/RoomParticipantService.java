@@ -29,6 +29,10 @@ public class RoomParticipantService {
         return roomParticipantRepository.findByUser(user);
     }
 
+    public boolean isParticipant(Room room, User user) {
+        return roomParticipantRepository.findByUserAndRoom(user, room).isPresent();
+    }
+
     public void removeParticipant(Room room, User user) {
         roomParticipantRepository.findByUserAndRoom(user, room)
                 .ifPresent(roomParticipantRepository::delete);

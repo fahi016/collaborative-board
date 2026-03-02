@@ -1,13 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../services/authApi';
+import { wsService } from '../services/websocket';
 
 const AuthContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 };
 
@@ -17,24 +16,17 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in on mount
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
-
     if (storedToken && storedUser) {
       try {
-        const parsedUser = JSON.parse(storedUser);
         setToken(storedToken);
-        setUser(parsedUser);
+        setUser(JSON.parse(storedUser));
       } catch {
-        // Malformed data – clear and start fresh
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        setToken(null);
-        setUser(null);
       }
     }
-
     setLoading(false);
   }, []);
 
@@ -45,32 +37,39 @@ export const AuthProvider = ({ children }) => {
       name: response.name,
       role: response.role,
     };
-
     localStorage.setItem('token', response.token);
     localStorage.setItem('user', JSON.stringify(nextUser));
-
     setToken(response.token);
     setUser(nextUser);
   };
 
   const login = async (email, password) => {
+    // FIX: If a previous user left a live WebSocket open (e.g. navigated away
+    // without clicking Exit, or the board component unmounted unexpectedly),
+    // kill it before storing the new user's token. This prevents the new user's
+    // wsService.connect() call from being skipped by the `if (this.connected) return`
+    // guard — which was the root cause of "test1 creates room but WS shows test2".
+    wsService.disconnect();
+
     const response = await authApi.login(email, password);
     persistAuth(response);
     return response;
   };
 
   const register = async (email, password, confirmPassword, name) => {
-    const response = await authApi.register(
-      email,
-      password,
-      confirmPassword,
-      name,
-    );
+    // Same guard as login — disconnect any stale session before registering.
+    wsService.disconnect();
+
+    const response = await authApi.register(email, password, confirmPassword, name);
     persistAuth(response);
     return response;
   };
 
   const logout = () => {
+    // FIX: Disconnect WebSocket BEFORE clearing localStorage so that any
+    // in-flight leave/cleanup messages can still authenticate with the current token.
+    wsService.disconnect();
+
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('activeRoom');
@@ -78,48 +77,20 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  const value = {
-    user,
-    token,
-    loading,
-    login,
-    register,
-    logout,
-    isAuthenticated: !!token,
-  };
+  const value = { user, token, loading, login, register, logout, isAuthenticated: !!token };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="flex items-center space-x-3 text-gray-600">
-          <svg
-            className="animate-spin h-5 w-5 text-blue-600"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-              fill="none"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
+      <div className="flex min-h-screen items-center justify-center" style={{ background: '#0a0a0a' }}>
+        <div className="flex items-center gap-3 rounded-xl px-5 py-3" style={{ background: '#111', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#555' }}>
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
           </svg>
-          <span className="text-sm font-medium">Loading session…</span>
+          <span className="text-sm font-medium" style={{ color: '#888' }}>Loading…</span>
         </div>
       </div>
     );
   }
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

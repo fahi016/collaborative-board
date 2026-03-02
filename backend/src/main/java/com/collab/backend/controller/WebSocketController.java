@@ -11,7 +11,6 @@ import com.collab.backend.exception.RoomFullException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
 import com.collab.backend.model.User;
-import com.collab.backend.repository.RoomParticipantRepository;
 import com.collab.backend.repository.UserRepository;
 import com.collab.backend.service.*;
 import jakarta.validation.Valid;
@@ -20,7 +19,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
@@ -28,8 +26,9 @@ import org.springframework.stereotype.Controller;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-
 
 @Controller
 @AllArgsConstructor
@@ -46,385 +45,287 @@ public class WebSocketController {
     private final VoiceSignalingService voiceSignalingService;
     private final ChatService chatService;
 
-
-
     /**
-     * Handle user joining a room
-     * Client sends to: /app/room/{roomId}/join
-     * Broadcasts to: /topic/room/{roomId}/users
+     * FIX: Track evicted/superseded session IDs so that in-flight messages from
+     * the old WebSocket connection (which is still physically open) are silently
+     * dropped rather than logged as scary "User not in room" warnings and sending
+     * error frames back to a dying connection.
+     *
+     * Entry lifecycle:
+     *  - Added in handleUserJoin when a ghost session is evicted.
+     *  - Removed in handleUserLeave when the old session finally sends its leave.
+     *  - Also removed after EVICTED_SESSION_TTL_MS to avoid unbounded growth in
+     *    the unlikely event the old connection never sends a leave.
+     *
+     * A ConcurrentHashMap<sessionId, evictedAtMs> is used (value = timestamp for TTL).
      */
+    private static final long EVICTED_SESSION_TTL_MS = 60_000; // 1 minute
+    private final Map<String, Long> evictedSessions = new ConcurrentHashMap<>();
 
     @MessageMapping("/room/{roomId}/join")
-    @SendTo("/topic/room/{roomId}/users")
-    public UserMessage handleUserJoin(
+    public void handleUserJoin(
             @DestinationVariable String roomId,
             Principal principal,
-            StompHeaderAccessor accessor
-    ){
+            StompHeaderAccessor accessor) {
+
         validatePrincipal(principal);
         validateRoomId(roomId);
 
-        logger.info("User joining room {}: {}", roomId, principal.getName());
+        String username = principal.getName();
+        String sessionId = accessor.getSessionId();
 
-        try{
-            String username = principal.getName();
-            String sessionId = accessor.getSessionId();
-            // Add user to room
-            JoinRoomResponse response = userService.joinAuthenticatedUser(
-                    roomId,
-                    username,
-                    sessionId
-            );
+        logger.info("User joining room={} user={} session={}", roomId, username, sessionId);
+
+        try {
+            // FIX: Capture which ghost session (if any) was evicted during this join,
+            // so we can register it in evictedSessions for silent drain below.
+            String evictedSessionId = userService.joinAuthenticatedUserAndGetEvictedSession(roomId, username, sessionId);
+
+            if (evictedSessionId != null) {
+                evictedSessions.put(evictedSessionId, System.currentTimeMillis());
+                logger.debug("Registered evicted session={} for silent drain", evictedSessionId);
+            }
+
+            // Re-fetch the fresh join result (UserService already saved it)
+            JoinRoomResponse response = userService.getActiveJoinResponse(roomId, username, sessionId);
 
             User user = userRepository.findByEmail(username)
-                    .orElseThrow(()-> new IllegalStateException("User not found: " + username));
+                    .orElseThrow(() -> new IllegalStateException("User not found: " + username));
             Room room = roomService.getRoomById(roomId);
             roomParticipantService.addOrUpdateParticipant(room, user);
 
             messagingTemplate.convertAndSendToUser(
-                    principal.getName(),
+                    username,
                     "/queue/join-confirmation",
-                    Map.of(
-                            "type", "join-confirmation",
+                    Map.of("type", "join-confirmation",
                             "sessionId", response.getSessionId(),
                             "userName", response.getUserName(),
-                            "color", response.getUserColor()
-                    )
+                            "color", response.getUserColor())
             );
 
-
-
-
-            // Also send updated user list
             sendUserList(roomId);
 
-            // Send board history to joining user only
             List<Object> history = boardRedisService.getAllActions(roomId);
-
             if (history != null && !history.isEmpty()) {
-                messagingTemplate.convertAndSendToUser(
-                        principal.getName(),
-                        "/queue/history",
-                        history
-                );
+                messagingTemplate.convertAndSendToUser(username, "/queue/history", history);
             } else {
                 var boardState = boardService.getBoardState(roomId, 1);
-
                 if (boardState != null && boardState.getCanvasData() != null) {
-                    messagingTemplate.convertAndSendToUser(
-                            principal.getName(),
-                            "/queue/history",
-                            boardState.getCanvasData()
-                    );
+                    messagingTemplate.convertAndSendToUser(username, "/queue/history",
+                            boardState.getCanvasData());
                 }
             }
 
-
-            return new UserMessage(
-                    "join",
-                    response.getUserName(),
-                    response.getSessionId(),
-                    response.getUserColor()
-            );
-
-        } catch (IllegalStateException e) {
-            // Handle specific case: user already active in another room
-            logger.warn("User {} cannot join room {}: {}", principal.getName(), roomId, e.getMessage());
-            
-            // Send error message directly to the user
+        } catch (IllegalStateException | RoomFullException e) {
+            logger.warn("Join rejected user={} room={}: {}", username, roomId, e.getMessage());
             messagingTemplate.convertAndSendToUser(
-                    principal.getName(),
-                    "/queue/errors",
-                    (Object) Map.of(
-                            "type", "error",
-                            "message", e.getMessage(),
-                            "roomId", roomId
-                    )
+                    username, "/queue/errors",
+                    (Object) Map.of("type", "error", "message", e.getMessage(), "roomId", roomId)
             );
-            
-            // Return null to prevent broadcasting to the room topic
-            return null;
-        } catch (RoomFullException e) {
-            // Handle room full exception
-            logger.warn("User {} cannot join room {}: {}", principal.getName(), roomId, e.getMessage());
-            
-            // Send error message directly to the user
-            messagingTemplate.convertAndSendToUser(
-                    principal.getName(),
-                    "/queue/errors",
-                    (Object) Map.of(
-                            "type", "error",
-                            "message", e.getMessage(),
-                            "roomId", roomId
-                    )
-            );
-            
-            // Return null to prevent broadcasting to the room topic
-            return null;
         } catch (Exception e) {
-            logger.error("Error handling user join", e);
-            
-            // Send error message to the user
+            logger.error("Unexpected error on join user={} room={}", username, roomId, e);
             messagingTemplate.convertAndSendToUser(
-                    principal.getName(),
-                    "/queue/errors",
-                    (Object) Map.of(
-                            "type", "error",
-                            "message", "Failed to join room: " + e.getMessage(),
-                            "roomId", roomId
-                    )
+                    username, "/queue/errors",
+                    (Object) Map.of("type", "error", "message", "Failed to join room", "roomId", roomId)
             );
-            
-            // Return null to prevent broadcasting to the room topic
-            return null;
         }
     }
 
-    /**
-     * Handle user leaving a room
-     * Client sends to: /app/room/{roomId}/leave
-     * Broadcasts to: /topic/room/{roomId}/users
-     */
     @MessageMapping("/room/{roomId}/leave")
-    @SendTo("/topic/room/{roomId}/users")
-    public UserMessage handleUserLeave(
+    public void handleUserLeave(
             @DestinationVariable String roomId,
             Principal principal,
-            StompHeaderAccessor accessor
-
-    ){
-
-        validatePrincipal(principal);
-        validateRoomId(roomId);
-
-        logger.info("User leaving room {}: {}", roomId, principal.getName());
-        try{
-
-            String sessionId = accessor.getSessionId();
-            String username = principal.getName();
-
-            // Remove user from room
-
-            userService.removeUserFromRoom(sessionId);
-
-
-            // Prepare leave message
-            UserMessage leaveMessage = new UserMessage(
-                    "leave",
-                    principal.getName(),
-                    sessionId,
-                    null
-            );
-            // Also send updated user list
-            sendUserList(roomId);
-
-            return leaveMessage;
-
-        } catch (Exception e) {
-            logger.error("Error handling user leave", e);
-            throw e;
-        }
-    }
-
-
-    /**
-     * Handle draw action
-     * Client sends to: /app/board/{roomId}/draw
-     * Broadcasts to: /topic/room/{roomId}
-     */
-    @MessageMapping("/board/{roomId}/draw")
-    @SendTo("/topic/room/{roomId}")
-    public BoardActionMessage handleDraw(
-            @DestinationVariable String roomId,
-            @Valid BoardActionMessage message,
-            Principal principal,
-            StompHeaderAccessor accessor
-    ) {
+            StompHeaderAccessor accessor) {
 
         validatePrincipal(principal);
         validateRoomId(roomId);
 
         String sessionId = accessor.getSessionId();
+        String username = principal.getName();
+        logger.info("User leaving room={} user={} session={}", roomId, username, sessionId);
 
-        if (!userService.isSessionInRoom(roomId, sessionId)) {
-            throw new IllegalStateException("User not in room");
+        // FIX: If this is the old (evicted) session finally sending its leave,
+        // clean it out of the evictedSessions map and skip the normal removeUserFromRoom
+        // (the DB record was already deleted during eviction).
+        if (evictedSessions.remove(sessionId) != null) {
+            logger.debug("Evicted session={} sent leave — drain complete, ignoring", sessionId);
+            return;
         }
 
-        logger.debug("Draw action in room {} by {}", roomId, principal.getName());
-        boardRedisService.saveAction(roomId, message);
-
-
-        return message;
-    }
-
-
-    /**
-     * Handle text action
-     * Client sends to: /app/board/{roomId}/text
-     * Broadcasts to: /topic/room/{roomId}
-     */
-    @MessageMapping("/board/{roomId}/text")
-    @SendTo("/topic/room/{roomId}")
-    public BoardActionMessage handleText(
-            @DestinationVariable String roomId,
-            @Valid BoardActionMessage message,
-            Principal principal,
-            StompHeaderAccessor accessor
-    ) {
-
-        validatePrincipal(principal);
-        validateRoomId(roomId);
-
-        String sessionId = accessor.getSessionId();
-
-        if (!userService.isSessionInRoom(roomId, sessionId)) {
-            throw new IllegalStateException("User not in room");
-        }
-
-        logger.debug("Text action in room {} by {}", roomId, principal.getName());
-        boardRedisService.saveAction(roomId, message);
-
-
-        return message;
-    }
-
-
-
-    /**
-     * Handle erase action
-     * Client sends to: /app/board/{roomId}/erase
-     * Broadcasts to: /topic/room/{roomId}
-     */
-    @MessageMapping("/board/{roomId}/erase")
-    @SendTo("/topic/room/{roomId}")
-    public BoardActionMessage handleErase(
-            @DestinationVariable String roomId,
-            @Valid BoardActionMessage message,
-            Principal principal,
-            StompHeaderAccessor accessor
-    ) {
-
-        validatePrincipal(principal);
-        validateRoomId(roomId);
-
-        String sessionId = accessor.getSessionId();
-
-        if (!userService.isSessionInRoom(roomId, sessionId)) {
-            throw new IllegalStateException("User not in room");
-        }
-
-        logger.debug("Erase action in room {} by {}", roomId, principal.getName());
-        boardRedisService.saveAction(roomId, message);
-
-
-        return message;
-    }
-
-
-    private void sendUserList(String roomId) {
         try {
-            List<ActiveUser> users = userService.getUsersInRoom(roomId);
-
-            List<Map<String, Object>> userList = users.stream()
-                    .map(user -> Map.of(
-                            "userName", (Object) user.getUserName(),
-                            "color", user.getColor(),
-                            "sessionId", user.getSessionId()
-                    ))
-                    .collect(Collectors.toList());
-
-            messagingTemplate.convertAndSend(
-                    "/topic/room/" + roomId + "/users",
-                    (Object) Map.of(
-                            "type", "user-list",
-                            "users", userList
-                    )
-            );
-
+            // FIX: removeUserFromRoom now returns the roomId it cleaned up, or null
+            // if the session was already removed (e.g. by the REST session-leave).
+            // Only broadcast when we actually performed the removal — avoids sending
+            // a duplicate user-list if the REST path already broadcast one.
+            String cleanedRoomId = userService.removeUserFromRoom(sessionId);
+            if (cleanedRoomId != null) {
+                sendUserList(cleanedRoomId);
+            }
         } catch (Exception e) {
-            logger.error("Error sending user list", e);
+            logger.error("Error on leave user={} room={}", username, roomId, e);
         }
     }
 
-    private void validatePrincipal(Principal principal) {
-        if (principal == null) {
-            throw new IllegalStateException("Unauthenticated user");
-        }
+    @MessageMapping("/board/{roomId}/draw")
+    public void handleDraw(
+            @DestinationVariable String roomId,
+            @Valid BoardActionMessage message,
+            Principal principal,
+            StompHeaderAccessor accessor) {
+
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+        requireSessionInRoom(roomId, accessor.getSessionId(), principal.getName());
+
+        boardRedisService.saveAction(roomId, message);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, (Object) message);
     }
 
-    private void validateRoomId(String roomId) {
-        if (roomId == null || roomId.isBlank() || roomId.length() > 36) {
-            throw new IllegalArgumentException("Invalid roomId");
-        }
+    @MessageMapping("/board/{roomId}/text")
+    public void handleText(
+            @DestinationVariable String roomId,
+            @Valid BoardActionMessage message,
+            Principal principal,
+            StompHeaderAccessor accessor) {
+
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+        requireSessionInRoom(roomId, accessor.getSessionId(), principal.getName());
+
+        boardRedisService.saveAction(roomId, message);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, (Object) message);
     }
 
+    @MessageMapping("/board/{roomId}/erase")
+    public void handleErase(
+            @DestinationVariable String roomId,
+            @Valid BoardActionMessage message,
+            Principal principal,
+            StompHeaderAccessor accessor) {
 
-    // Handler: relay WebRTC signaling
+        validatePrincipal(principal);
+        validateRoomId(roomId);
+        requireSessionInRoom(roomId, accessor.getSessionId(), principal.getName());
+
+        boardRedisService.saveAction(roomId, message);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, (Object) message);
+    }
+
     @MessageMapping("/room/{roomId}/voice/signal")
     public void handleVoiceSignal(
             @DestinationVariable String roomId,
             @Valid VoiceSignalRequest request,
             Principal principal,
             StompHeaderAccessor accessor) {
+
         validatePrincipal(principal);
         validateRoomId(roomId);
-        String sessionId = accessor.getSessionId();
-        if (!userService.isSessionInRoom(roomId, sessionId)) {
-            throw new IllegalStateException("User not in room");
-        }
+        requireSessionInRoom(roomId, accessor.getSessionId(), principal.getName());
+
         try {
-            voiceSignalingService.relaySignal(roomId, sessionId, principal.getName(), request);
+            voiceSignalingService.relaySignal(roomId, accessor.getSessionId(), principal.getName(), request);
         } catch (IllegalArgumentException e) {
             logger.warn("Voice signal rejected: {}", e.getMessage());
-            messagingTemplate.convertAndSendToUser(
-                    principal.getName(),
-                    "/queue/errors",
+            messagingTemplate.convertAndSendToUser(principal.getName(), "/queue/errors",
                     (Object) Map.of("type", "error", "message", e.getMessage(), "roomId", roomId));
         }
     }
 
-        /**
-     * Handle chat message in a room.
-     * Client sends to: /app/room/{roomId}/chat
-     * Broadcasts to: /topic/room/{roomId}/chat
-     */
     @MessageMapping("/room/{roomId}/chat")
-    @SendTo("/topic/room/{roomId}/chat")
-    public ChatMessageResponse handleChat(
+    public void handleChat(
             @DestinationVariable String roomId,
             @Valid ChatMessageRequest request,
             Principal principal,
-            StompHeaderAccessor accessor
-    ) {
+            StompHeaderAccessor accessor) {
+
         validatePrincipal(principal);
         validateRoomId(roomId);
-        String sessionId = accessor.getSessionId();
-        if (!userService.isSessionInRoom(roomId, sessionId)) {
-            throw new IllegalStateException("User not in room");
-        }
-        logger.debug("Chat message received roomId={} from {}", roomId, principal.getName());
-        return chatService.sendMessage(roomId, principal.getName(), request.getContent());
+        requireSessionInRoom(roomId, accessor.getSessionId(), principal.getName());
+
+        ChatMessageResponse response = chatService.sendMessage(roomId, principal.getName(), request.getContent());
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/chat", (Object) response);
     }
 
-    // Handler: broadcast mic on/off to room (so everyone can show mute state)
     @MessageMapping("/room/{roomId}/voice/mic")
-    @SendTo("/topic/room/{roomId}/users")
-    public Map<String, Object> handleVoiceMic(
+    public void handleVoiceMic(
             @DestinationVariable String roomId,
             @Valid VoiceMicRequest request,
             Principal principal,
             StompHeaderAccessor accessor) {
+
         validatePrincipal(principal);
         validateRoomId(roomId);
-        String sessionId = accessor.getSessionId();
+        requireSessionInRoom(roomId, accessor.getSessionId(), principal.getName());
+
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/users",
+                (Object) Map.of("type", "voice-mic",
+                        "sessionId", accessor.getSessionId(),
+                        "userName", principal.getName(),
+                        "muted", request.getMuted()));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void sendUserList(String roomId) {
+        try {
+            List<ActiveUser> users = userService.getUsersInRoom(roomId);
+            List<Map<String, Object>> userList = users.stream()
+                    .map(u -> Map.<String, Object>of(
+                            "userName", u.getUserName(),
+                            "color", u.getColor(),
+                            "sessionId", u.getSessionId()))
+                    .collect(Collectors.toList());
+            messagingTemplate.convertAndSend("/topic/room/" + roomId + "/users",
+                    (Object) Map.of("type", "user-list", "users", userList));
+        } catch (Exception e) {
+            logger.error("Error sending user list for room {}", roomId, e);
+        }
+    }
+
+    private void validatePrincipal(Principal principal) {
+        if (principal == null) throw new IllegalStateException("Unauthenticated user");
+    }
+
+    private void validateRoomId(String roomId) {
+        if (roomId == null || roomId.isBlank() || roomId.length() > 36)
+            throw new IllegalArgumentException("Invalid roomId");
+    }
+
+    /**
+     * FIX: Before throwing, check if this is a known evicted (ghost-drained) session.
+     * If so, log at DEBUG instead of WARN and skip sending an error frame —
+     * the old WebSocket is dying anyway and sending it errors just causes
+     * frontend reconnect loops.
+     *
+     * Also prune stale TTL entries to prevent unbounded map growth.
+     */
+    private void requireSessionInRoom(String roomId, String sessionId, String username) {
         if (!userService.isSessionInRoom(roomId, sessionId)) {
+
+            // Prune expired eviction records opportunistically
+            long now = System.currentTimeMillis();
+            evictedSessions.entrySet().removeIf(e -> now - e.getValue() > EVICTED_SESSION_TTL_MS);
+
+            if (evictedSessions.containsKey(sessionId)) {
+                logger.debug("Silently dropping action from evicted session={} user={} room={}",
+                        sessionId, username, roomId);
+                // Throw so the handler exits, but WebSocketExceptionHandler should
+                // NOT send an error frame for evicted sessions. Mark with a subclass:
+                throw new EvictedSessionException();
+            }
+
+            logger.warn("Session {} (user={}) not in room {} — rejecting action", sessionId, username, roomId);
             throw new IllegalStateException("User not in room");
         }
-        logger.debug("Voice mic roomId={} user={} muted={}", roomId, principal.getName(), request.getMuted());
-        return Map.of(
-                "type", "voice-mic",
-                "sessionId", sessionId,
-                "userName", principal.getName(),
-                "muted", request.getMuted());
+    }
+
+    /**
+     * Marker exception for actions arriving from an already-evicted ghost session.
+     * WebSocketExceptionHandler should catch this and do nothing (no error frame sent).
+     */
+    public static class EvictedSessionException extends RuntimeException {
+        public EvictedSessionException() {
+            super("Evicted session — silently dropped");
+        }
     }
 }

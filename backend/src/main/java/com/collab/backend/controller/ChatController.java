@@ -3,6 +3,7 @@ package com.collab.backend.controller;
 import com.collab.backend.dto.ChatMessageResponse;
 import com.collab.backend.service.AuthService;
 import com.collab.backend.service.ChatService;
+import com.collab.backend.service.RoomService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -28,6 +30,7 @@ public class ChatController {
 
     private final ChatService chatService;
     private final AuthService authService;
+    private final RoomService roomService;
 
     /**
      * Get paginated chat history for a room. User must be authenticated.
@@ -39,7 +42,10 @@ public class ChatController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        authService.getCurrentUser(); // ensure authenticated
+        var currentUser = authService.getCurrentUser();
+        if (!roomService.canAccessRoom(currentUser, roomId)) {
+            throw new AccessDeniedException("You do not have access to this room");
+        }
 
         if (size <= 0 || size > MAX_PAGE_SIZE) {
             size = DEFAULT_PAGE_SIZE;
