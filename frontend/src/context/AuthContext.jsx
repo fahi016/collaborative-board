@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../services/authApi';
 import { wsService } from '../services/websocket';
+import LoadingScreen from '../components/LoadingScreen';
 
 const AuthContext = createContext(null);
 
@@ -44,11 +45,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (email, password) => {
-    // FIX: If a previous user left a live WebSocket open (e.g. navigated away
-    // without clicking Exit, or the board component unmounted unexpectedly),
-    // kill it before storing the new user's token. This prevents the new user's
-    // wsService.connect() call from being skipped by the `if (this.connected) return`
-    // guard — which was the root cause of "test1 creates room but WS shows test2".
+    // If a previous user left a live WebSocket open, kill it before login.
     wsService.disconnect();
 
     const response = await authApi.login(email, password);
@@ -57,7 +54,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (email, password, confirmPassword, name) => {
-    // Same guard as login — disconnect any stale session before registering.
+    // Same guard as login - disconnect any stale session before registering.
     wsService.disconnect();
 
     const response = await authApi.register(email, password, confirmPassword, name);
@@ -66,8 +63,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    // FIX: Disconnect WebSocket BEFORE clearing localStorage so that any
-    // in-flight leave/cleanup messages can still authenticate with the current token.
+    // Disconnect before clearing storage so cleanup calls can still authenticate.
     wsService.disconnect();
 
     localStorage.removeItem('token');
@@ -80,16 +76,7 @@ export const AuthProvider = ({ children }) => {
   const value = { user, token, loading, login, register, logout, isAuthenticated: !!token };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center" style={{ background: '#0a0a0a' }}>
-        <div className="flex items-center gap-3 rounded-xl px-5 py-3" style={{ background: '#111', border: '1px solid rgba(255,255,255,0.07)' }}>
-          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#555' }}>
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-          </svg>
-          <span className="text-sm font-medium" style={{ color: '#888' }}>Loading…</span>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
