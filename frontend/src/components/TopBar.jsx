@@ -75,8 +75,8 @@ function TopBar({ roomId, roomName, userName, onExit, connected, voiceEnabled, o
             className={`flex items-center justify-center rounded-lg w-8 h-8 t ${muted ? 'btn-ghost' : ''}`}
             style={!muted ? { background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' } : {}}>
             {muted ? (
-              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.076L5.207 12.3 2.293 15.207a1 1 0 01-1.414-1.414l14-14a1 1 0 011.414 1.414L9.383 3.076z" clipRule="evenodd"/>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M9 9v2a3 3 0 005.12 2.12M15 9V6a3 3 0 00-5.78-1M3 3l18 18"/>
               </svg>
             ) : (
               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
