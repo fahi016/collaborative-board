@@ -1,22 +1,6 @@
 // src/services/api.js
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 15000);
-
-const fetchWithTimeout = (url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...options, signal: controller.signal })
-    .catch((err) => {
-      if (err?.name === 'AbortError') {
-        throw new Error('Request timed out. Please try again.');
-      }
-      throw err;
-    })
-    .finally(() => {
-      clearTimeout(timeoutId);
-    });
-};
 
 const getAuthHeaders = (extra = {}) => {
   const token = localStorage.getItem('token');
@@ -54,7 +38,7 @@ const handleJsonResponse = async (res, defaultErrorMessage) => {
 
 export const api = {
   createRoom: async (name) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms`, {
       method: 'POST',
       headers: getAuthHeaders({
         'Content-Type': 'application/json',
@@ -69,7 +53,7 @@ export const api = {
 
   // Join a room using REST (Session-Id header)
   joinRoom: async (roomId, sessionId) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}/join`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/join`, {
       method: 'POST',
       headers: getAuthHeaders({
         'Content-Type': 'application/json',
@@ -92,7 +76,7 @@ export const api = {
   },
 
   getRoomInfo: async (roomId) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}`, {
       headers: getAuthHeaders(),
     });
     if (res.status === 403) {
@@ -102,7 +86,7 @@ export const api = {
   },
 
   getActiveUsers: async (roomId) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}/users`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/users`, {
       headers: getAuthHeaders(),
     });
     if (res.status === 403) {
@@ -113,7 +97,7 @@ export const api = {
 
   // Board state APIs for loading/syncing canvas history
   getBoardState: async (roomId, pageNumber = 1) => {
-    const res = await fetchWithTimeout(
+    const res = await fetch(
       `${API_BASE_URL}/api/rooms/${roomId}/state?pageNumber=${pageNumber}`,
       {
         headers: getAuthHeaders(),
@@ -126,7 +110,7 @@ export const api = {
   },
 
   updateBoardState: async (roomId, { pageNumber = 1, canvasData }) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}/state`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/state`, {
       method: 'PUT',
       headers: getAuthHeaders({
         'Content-Type': 'application/json',
@@ -147,7 +131,7 @@ export const api = {
   },
 
   clearBoardState: async (roomId, pageNumber = 1) => {
-    const res = await fetchWithTimeout(
+    const res = await fetch(
       `${API_BASE_URL}/api/rooms/${roomId}/state?pageNumber=${pageNumber}`,
       {
         method: 'DELETE',
@@ -162,7 +146,7 @@ export const api = {
 
   // Get rooms for the current authenticated user (owned + joined)
   getMyRooms: async () => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/my`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/my`, {
       headers: getAuthHeaders(),
     });
     if (res.status === 403) {
@@ -173,7 +157,7 @@ export const api = {
 
   // Update room name (only owner)
   updateRoom: async (roomId, name) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}`, {
       method: 'PUT',
       headers: getAuthHeaders({
         'Content-Type': 'application/json',
@@ -188,7 +172,7 @@ export const api = {
 
   // Delete room (only owner)
   deleteRoom: async (roomId) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -203,7 +187,7 @@ export const api = {
 
   // Leave room (joined users only, not owners)
   leaveRoom: async (roomId) => {
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/rooms/${roomId}/leave`, {
+    const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/leave`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
@@ -218,7 +202,7 @@ export const api = {
 
   // Get chat message history for a room (paginated)
   getChatHistory: async (roomId, page = 0, size = 50) => {
-    const res = await fetchWithTimeout(
+    const res = await fetch(
       `${API_BASE_URL}/api/rooms/${roomId}/messages?page=${page}&size=${size}`,
       {
         headers: getAuthHeaders(),

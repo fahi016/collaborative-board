@@ -16,10 +16,12 @@ function MicIndicator({ muted }) {
   );
 }
 
-function UserList({ users, currentUser, mySessionId, voiceMicState = {}, voiceEnabled = false }) {
-  const isMutedFor = (sessionId) => {
-    if (!(sessionId in voiceMicState)) return undefined;
-    return voiceMicState[sessionId];
+function UserList({ users, currentUser, mySessionId, voiceMicState = {} }) {
+  const isMutedFor = (sessionId, userName) => {
+    if (sessionId && sessionId in voiceMicState) return voiceMicState[sessionId];
+    const userKey = userName ? `user:${userName}` : null;
+    if (userKey && userKey in voiceMicState) return voiceMicState[userKey];
+    return undefined;
   };
 
   return (
@@ -28,7 +30,7 @@ function UserList({ users, currentUser, mySessionId, voiceMicState = {}, voiceEn
 
       {users.map((user, index) => {
         const isYou = user.userName === currentUser || (mySessionId && user.sessionId === mySessionId);
-        const muted = isMutedFor(user.sessionId);
+        const muted = isMutedFor(user.sessionId, user.userName);
 
         return (
           <div
@@ -41,7 +43,7 @@ function UserList({ users, currentUser, mySessionId, voiceMicState = {}, voiceEn
               {user.userName}
             </span>
             {isYou && <span className="mono text-xs" style={{ color: '#444' }}>you</span>}
-            {voiceEnabled && muted !== undefined && <MicIndicator muted={muted} />}
+            {muted !== undefined && <MicIndicator muted={muted} />}
           </div>
         );
       })}

@@ -8,10 +8,9 @@ export const logger = {
     if (DEBUG_ENABLED) console.info(...args);
   },
   warn: (...args) => {
-    console.warn(...args);
+    if (DEBUG_ENABLED) console.warn(...args);
   },
   error: (...args) => {
-    console.error(...args);
+    if (DEBUG_ENABLED) console.error(...args);
   },
 };
-

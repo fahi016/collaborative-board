@@ -56,7 +56,11 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
         return message.users.find(u => u.userName === userName)?.sessionId ?? null;
       });
     } else if (message.type === 'voice-mic') {
-      setVoiceMicState(prev => ({ ...prev, [message.sessionId]: message.muted }));
+      setVoiceMicState(prev => ({
+        ...prev,
+        ...(message.sessionId ? { [message.sessionId]: message.muted } : {}),
+        ...(message.userName ? { [`user:${message.userName}`]: message.muted } : {}),
+      }));
     }
   }, [userName]);
 
@@ -158,16 +162,42 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
         if (!active) return;
         reconnectNoticeShownRef.current = false;
         setConnected(true);
+        let roomTopicsSubscribed = false;
+        const subscribeRoomTopics = () => {
+          if (roomTopicsSubscribed) return;
+          roomTopicsSubscribed = true;
+          wsService.subscribe(`/topic/room/${roomId}`, msg => handlersRef.current.handleRemoteAction?.(msg));
+          wsService.subscribe(`/topic/room/${roomId}/users`, msg => handlersRef.current.handleUserUpdate?.(msg));
+          wsService.subscribe(`/topic/room/${roomId}/updates`, msg => handlersRef.current.handleRoomUpdate?.(msg));
+          wsService.subscribe(`/topic/room/${roomId}/chat`, msg => handlersRef.current.handleChatMessage?.(msg));
+        };
+
         wsService.subscribe('/user/queue/join-confirmation', msg => {
-          if (msg?.sessionId) setMySessionId(msg.sessionId);
+          if (msg?.sessionId) {
+            setMySessionId(msg.sessionId);
+            subscribeRoomTopics();
+            (async () => {
+              try {
+                const activeUsers = await api.getActiveUsers(roomId);
+                if (!active) return;
+                setUsers(
+                  Array.isArray(activeUsers)
+                    ? activeUsers.map(u => ({
+                        userName: u.userName,
+                        color: u.color,
+                        sessionId: null,
+                      }))
+                    : [],
+                );
+              } catch (err) {
+                logger.error('Failed to sync active users after join:', err);
+              }
+            })();
+          }
         });
         wsService.subscribe('/user/queue/history', msg => handlersRef.current.handleHistoryMessage?.(msg));
-        wsService.subscribe(`/topic/room/${roomId}`, msg => handlersRef.current.handleRemoteAction?.(msg));
-        wsService.subscribe(`/topic/room/${roomId}/users`, msg => handlersRef.current.handleUserUpdate?.(msg));
-        wsService.subscribe(`/topic/room/${roomId}/updates`, msg => handlersRef.current.handleRoomUpdate?.(msg));
         wsService.subscribe('/user/queue/errors', msg => handlersRef.current.handleError?.(msg));
         wsService.subscribe('/user/queue/voice-signal', msg => handlersRef.current.handleIncomingVoiceSignal?.(msg));
-        wsService.subscribe(`/topic/room/${roomId}/chat`, msg => handlersRef.current.handleChatMessage?.(msg));
         wsService.joinRoom(roomId, { userName });
       },
       (errorBody) => {

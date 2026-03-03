@@ -4,7 +4,9 @@ import { useMemo } from 'react';
 function ChatMessage({ message, isOwnMessage }) {
   const formattedTime = useMemo(() => {
     if (!message.createdAt) return '';
-    const date = new Date(message.createdAt);
+    const raw = String(message.createdAt);
+    const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(raw);
+    const date = new Date(hasTimezone ? raw : `${raw}Z`);
     const now = new Date();
     const diffMins = Math.floor((now - date) / 60000);
     if (diffMins < 1) return 'now';

@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 're
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 8;
 
-const Canvas = forwardRef(({ tool, color, eraserSize = 20, userColor, onAction }, ref) => {
+const Canvas = forwardRef(({ tool, color, eraserSize = 20, onAction }, ref) => {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
 

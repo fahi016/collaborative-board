@@ -6,7 +6,6 @@ const API_BASE_URL =
 // Reusable axios client for auth calls
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS || 15000),
 });
 
 // Auth-specific API
@@ -19,9 +18,6 @@ export const authApi = {
       });
       return response.data;
     } catch (error) {
-      if (error.code === 'ECONNABORTED') {
-        throw 'Request timed out. Please try again.';
-      }
       throw (
         error.response?.data?.error ||
         error.response?.data?.message ||
@@ -40,9 +36,6 @@ export const authApi = {
       });
       return response.data;
     } catch (error) {
-      if (error.code === 'ECONNABORTED') {
-        throw 'Request timed out. Please try again.';
-      }
       throw (
         error.response?.data?.error ||
         error.response?.data?.message ||

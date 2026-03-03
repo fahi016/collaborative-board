@@ -44,7 +44,7 @@ function MyRooms({ onJoinRoom }) {
 
   const refresh = async () => setRooms(await api.getMyRooms());
 
-  const guardActive = (action) => {
+  const guardActive = () => {
     if (isUserAlreadyActive) {
       const m = `Already active in room ${activeRoomInfo.roomId} in another tab.`;
       setError(m); showToast(m, 'error'); return true;
