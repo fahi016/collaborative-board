@@ -1,134 +1,99 @@
 ﻿# Collaborative Board
 
-Real-time collaborative whiteboard with chat and voice signaling.
+Collaborative Board is a real-time multi-user whiteboard platform where teams can draw, chat, and coordinate in shared rooms.
 
-## What this project does
+## Project overview
 
-- Users can register/login and create or join rooms.
-- Each room supports up to **6 users**.
-- Real-time drawing sync over WebSocket.
-- Real-time room presence (`ONLINE` list) and voice mic state indicators.
-- Room chat with persisted history.
-- Board snapshot persistence to PostgreSQL, with Redis used for live action buffering.
+This project is built as a full-stack collaborative system with:
+- Live drawing synchronization
+- Room-based user presence
+- Real-time chat
+- Voice signaling/mic state indicators
+- JWT-secured authentication and room access
+
+Each room supports up to **6 concurrent users**.
+
+## Core features
+
+- Authentication: Register/login with JWT-based authorization
+- Room management: Create, join, rename, leave, and delete rooms
+- Real-time whiteboard: Multi-user drawing/text/erase sync via WebSocket (STOMP + SockJS)
+- Presence: Live user list with active participants in each room
+- Chat: Real-time room chat with persisted history
+- Voice status: Mic state visibility for participants
+- Persistence: Board/chat data backed by PostgreSQL, with Redis used for real-time board action buffering
+
+## Architecture
+
+- Frontend connects to backend REST APIs for auth, room metadata, history, and persistence operations
+- Frontend connects to backend WebSocket endpoint for low-latency real-time events
+- Backend enforces room-level authorization for protected WebSocket topics and REST endpoints
+- Redis stores transient board actions; snapshots/history persist to PostgreSQL
 
 ## Tech stack
 
-- Frontend: React + Vite + Tailwind
-- Backend: Spring Boot (Web, WebSocket, Security, JPA, Actuator)
-- Database: PostgreSQL
-- Cache/Broker support: Redis
-- Auth: JWT
+### Frontend
+- React 19
+- Vite 5
+- Tailwind CSS
+- STOMP client + SockJS
+
+### Backend
+- Spring Boot 4
+- Spring Security (JWT)
+- Spring WebSocket (STOMP)
+- Spring Data JPA
+- Actuator
+
+### Data layer
+- PostgreSQL (primary persistence)
+- Redis (realtime/cache layer)
+
+### DevOps / Hosting
+- Backend: Render
+- Redis: Render
+- Database: Neon
+- Frontend: Netlify
 
 ## Repository structure
 
 ```text
 .
-├─ backend/      # Spring Boot API + WebSocket server
-├─ frontend/     # React application
+├─ backend/       Spring Boot API + WebSocket server
+├─ frontend/      React client application
 ├─ docker-compose.yml
-└─ production.md # detailed production deployment plan
+└─ production.md  Deployment checklist and production setup
 ```
 
-## Local development
-
-### 1. Start local infrastructure
-
-From repo root:
+## Local run (quick start)
 
 ```bash
-docker compose up -d postgres redis
-```
+# infra
+Docker: postgres + redis (optional pgadmin) via docker-compose
 
-Optional: start pgAdmin too:
-
-```bash
-docker compose up -d pgadmin
-```
-
-### 2. Run backend
-
-From `backend`:
-
-```bash
+# backend
+cd backend
 ./mvnw spring-boot:run
-```
 
-Backend expects these env vars:
-
-- `DATABASE_URL` (JDBC URL)
-- `REDIS_URL` (redis URL, e.g. `redis://localhost:6379`)
-- `JWT_SECRET`
-- `FRONTEND_URL` (for CORS, e.g. `http://localhost:5173`)
-- optional: `JPA_DDL_AUTO` (`update`, `validate`, etc.)
-- optional: `PORT` (defaults to `8080`)
-
-### 3. Run frontend
-
-From `frontend`:
-
-```bash
+# frontend
+cd frontend
 npm install
 npm run dev
 ```
 
-Create `frontend/.env` from `frontend/.env.example`:
+Frontend env vars (from `frontend/.env.example`):
+- `VITE_API_BASE_URL`
+- `VITE_WS_URL`
+- `VITE_DEBUG_LOGS`
 
-- `VITE_API_BASE_URL=http://localhost:8080`
-- `VITE_WS_URL=http://localhost:8080/ws`
-- `VITE_DEBUG_LOGS=true` (use `false` for production-like behavior)
+Backend important env vars:
+- `DATABASE_URL`
+- `REDIS_URL`
+- `JWT_SECRET`
+- `FRONTEND_URL`
+- optional `JPA_DDL_AUTO`, `PORT`
 
-## Quality checks
 
-From `frontend`:
+## Author
 
-```bash
-npm run lint
-npm run build
-```
-
-From `backend`:
-
-```bash
-./mvnw test
-```
-
-## Production deployment
-
-Current production plan in this repo:
-
-- Backend: Render
-- Redis: Render
-- PostgreSQL: Neon
-- Frontend: Netlify
-
-See full step-by-step guide:
-
-- [`production.md`](./production.md)
-
-## API and WebSocket notes
-
-- REST base path: `/api`
-- SockJS endpoint: `/ws`
-- STOMP app prefix: `/app`
-- STOMP topics: `/topic/...`
-- User queues: `/user/queue/...`
-
-Backend enforces room access for room topic subscriptions, so clients must follow the join flow correctly.
-
-## Common issues
-
-1. `STOMP error` on room subscribe
-- Usually caused by subscribing to room topics before join access is established.
-
-2. CORS blocked
-- Ensure backend `FRONTEND_URL` exactly matches your frontend origin.
-
-3. WebSocket URL issues in production
-- `VITE_WS_URL` must be HTTPS origin + `/ws` (SockJS endpoint), for example:
-  - `https://your-backend.onrender.com/ws`
-
-## Security notes
-
-- Do not commit real secrets (`JWT_SECRET`, DB URLs with passwords, Redis credentials).
-- Keep secrets only in environment variables on your deployment platform.
-- Use `JPA_DDL_AUTO=validate` in stable production environments.
+real-time collaborative system with production-focused backend/frontend hardening.
