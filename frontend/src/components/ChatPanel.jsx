@@ -113,6 +113,7 @@ function ChatPanel({ roomId, currentUser, isOpen, onClose, messages, onSendMessa
       <div className="flex-shrink-0 p-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
         <div className="flex items-end gap-2">
           <textarea
+            data-chat-input="true"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

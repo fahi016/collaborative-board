@@ -6,7 +6,7 @@
 2. Set values for:
    - `VITE_API_BASE_URL`
    - `VITE_WS_URL`
-   - `VITE_API_TIMEOUT_MS`
+   - `VITE_ICE_SERVERS` (JSON array string; include TURN in production)
    - `VITE_DEBUG_LOGS`
 
 ## Scripts

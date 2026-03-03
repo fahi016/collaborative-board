@@ -299,26 +299,36 @@ const Canvas = forwardRef(({ tool, color, eraserSize = 20, onAction }, ref) => {
   // ─── Keyboard ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const isTypingTarget = (target) => {
+    const isTypingContext = (eventTarget) => {
+      const target = eventTarget || document.activeElement;
       if (!target) return false;
+
       const tag = target.tagName;
-      return (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        target.isContentEditable
-      );
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) {
+        return true;
+      }
+
+      // Extra safety: if focus is inside chat input wrapper, never hijack Space.
+      if (typeof target.closest === 'function' && target.closest('[data-chat-input]')) {
+        return true;
+      }
+
+      const active = document.activeElement;
+      if (!active) return false;
+      const activeTag = active.tagName;
+      return activeTag === 'INPUT' || activeTag === 'TEXTAREA' || active.isContentEditable;
     };
 
     const down = (e) => {
       if (e.code === 'Space' && !textEditor) {
-        if (isTypingTarget(e.target)) return;
+        if (isTypingContext(e.target)) return;
         e.preventDefault();
         spaceDownRef.current = true;
       }
     };
     const up = (e) => {
       if (e.code === 'Space') {
-        if (isTypingTarget(e.target)) return;
+        if (isTypingContext(e.target)) return;
         spaceDownRef.current = false;
       }
     };

@@ -31,8 +31,14 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
   const reconnectNoticeShownRef = useRef(false);
 
   const sendVoiceSignal = useCallback(payload => wsService.sendVoiceSignal(roomId, payload), [roomId]);
-  const { startVoice, leaveVoice, setMuted: setVoiceMuted, handleIncomingSignal: handleIncomingVoiceSignal } =
-    useVoiceRoom(roomId, users, userName, mySessionId, sendVoiceSignal);
+  const {
+    startVoice,
+    leaveVoice,
+    setMuted: setVoiceMuted,
+    handleIncomingSignal: handleIncomingVoiceSignal,
+    autoplayBlocked,
+    enableAudioPlayback,
+  } = useVoiceRoom(roomId, users, mySessionId, sendVoiceSignal);
 
   const handleHistoryMessage = useCallback((rawMessage) => {
     if (!canvasRef.current || !rawMessage) return;
@@ -128,6 +134,15 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
     const next = !muted;
     setMuted(next); setVoiceMuted(next); wsService.sendVoiceMic(roomId, next);
   }, [roomId, muted, setVoiceMuted]);
+
+  const handleEnableAudio = useCallback(async () => {
+    const ok = await enableAudioPlayback();
+    if (ok) {
+      showToast('Audio playback enabled', 'success');
+    } else {
+      showToast('Browser still blocked audio. Click again after interacting with the page.', 'warning');
+    }
+  }, [enableAudioPlayback, showToast]);
 
   const handleExit = useCallback(() => {
     if (voiceEnabled) leaveVoice();
@@ -254,6 +269,21 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
         muted={muted} onMicToggle={handleMicToggle} onToggleChat={handleToggleChat}
         chatOpen={chatOpen} unreadCount={unreadCount}
       />
+
+      {autoplayBlocked && (
+        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: '#16120a', borderColor: 'rgba(245,158,11,0.25)' }}>
+          <span className="text-xs" style={{ color: '#fbbf24' }}>
+            Audio is blocked by browser autoplay policy.
+          </span>
+          <button
+            onClick={handleEnableAudio}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold t"
+            style={{ background: '#fbbf24', color: '#0a0a0a' }}
+          >
+            Enable audio
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <Toolbar

@@ -92,6 +92,7 @@ npm run dev
 Frontend env vars (from `frontend/.env.example`):
 - `VITE_API_BASE_URL`
 - `VITE_WS_URL`
+- `VITE_ICE_SERVERS` (JSON array string; include TURN for production reliability)
 - `VITE_DEBUG_LOGS`
 
 Backend important env vars:
