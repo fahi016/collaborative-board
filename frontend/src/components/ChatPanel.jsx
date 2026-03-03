@@ -52,6 +52,8 @@ function ChatPanel({ roomId, currentUser, isOpen, onClose, messages, onSendMessa
   };
 
   const handleKeyDown = (e) => {
+    // Prevent canvas/global shortcuts from hijacking keyboard while typing chat.
+    e.stopPropagation();
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 

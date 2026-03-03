@@ -299,10 +299,29 @@ const Canvas = forwardRef(({ tool, color, eraserSize = 20, onAction }, ref) => {
   // ─── Keyboard ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const down = (e) => {
-      if (e.code === 'Space' && !textEditor) { e.preventDefault(); spaceDownRef.current = true; }
+    const isTypingTarget = (target) => {
+      if (!target) return false;
+      const tag = target.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        target.isContentEditable
+      );
     };
-    const up = (e) => { if (e.code === 'Space') spaceDownRef.current = false; };
+
+    const down = (e) => {
+      if (e.code === 'Space' && !textEditor) {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        spaceDownRef.current = true;
+      }
+    };
+    const up = (e) => {
+      if (e.code === 'Space') {
+        if (isTypingTarget(e.target)) return;
+        spaceDownRef.current = false;
+      }
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };

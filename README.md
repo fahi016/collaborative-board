@@ -2,6 +2,14 @@
 
 Collaborative Board is a real-time multi-user whiteboard platform where teams can draw, chat, and coordinate in shared rooms.
 
+![alt text](image.png)
+
+![alt text](image-1.png)
+
+![alt text](image-2.png)
+
+![alt text](image-3.png)
+
 ## Project overview
 
 This project is built as a full-stack collaborative system with:
