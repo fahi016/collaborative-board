@@ -6,7 +6,6 @@ import com.collab.backend.exception.RoomNotFoundException;
 import com.collab.backend.model.ActiveUser;
 import com.collab.backend.model.Room;
 import com.collab.backend.repository.ActiveUserRepository;
-import com.collab.backend.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -88,11 +87,23 @@ public class UserService {
             if (!allowMultiRoomPerUser) {
                 Optional<ActiveUser> inOtherRoom = repository.findByUserName(userName);
                 if (inOtherRoom.isPresent()) {
-                    String otherRoomId = inOtherRoom.get().getRoom().getRoomId();
-                    logger.warn("User={} already in room={}, rejecting join to room={}",
-                            userName, otherRoomId, roomId);
-                    throw new IllegalStateException(
-                            "You are already active in another room. Please leave it first.");
+                    ActiveUser existing = inOtherRoom.get();
+                    String otherRoomId = existing.getRoom().getRoomId();
+                    String otherSessionId = existing.getSessionId();
+
+                    if (!roomId.equals(otherRoomId)) {
+                        logger.warn("Transferring user={} from room={} session={} to room={}",
+                                userName, otherRoomId, otherSessionId, roomId);
+
+                        int removed = repository.deleteBySessionId(otherSessionId);
+                        if (removed > 0) {
+                            roomService.decrementUserCount(otherRoomId);
+                            Room otherRoom = roomService.getRoomById(otherRoomId);
+                            if (otherRoom.getCurrentUsers() == 0) {
+                                persistBoardAndClearRedis(otherRoomId);
+                            }
+                        }
+                    }
                 }
             }
 

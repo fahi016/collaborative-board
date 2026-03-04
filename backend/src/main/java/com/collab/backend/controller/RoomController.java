@@ -46,8 +46,7 @@ public class RoomController {
     public ResponseEntity<RoomCreateResponse> createRoom(@Valid @RequestBody RoomCreateRequest request) {
         RoomCreateResponse response = roomService.createRoom(
                 authService.getCurrentUser(),
-                request.getName()
-        );
+                request.getName());
         broadcastRoomUpdate(response.getRoomId(), "created", response.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -56,10 +55,12 @@ public class RoomController {
      * Get room information
      * GET /api/rooms/{roomId}
      *
-     * FIX: Now fetches room with owner eagerly loaded and includes ownerId + ownerName
+     * FIX: Now fetches room with owner eagerly loaded and includes ownerId +
+     * ownerName
      * in the response. Previously the response had no owner info, so the frontend
      * could not determine who created the room — leading to "test16 sees test17 as
-     * creator" confusion (both sides derived ownership incorrectly from local state).
+     * creator" confusion (both sides derived ownership incorrectly from local
+     * state).
      */
     @GetMapping("/{roomId}")
     public ResponseEntity<RoomInfoResponse> getRoomInfo(@PathVariable String roomId) {
@@ -76,8 +77,7 @@ public class RoomController {
                 room.getCreatedAt(),
                 room.isFull(),
                 canAccess ? room.getOwner().getId() : null,
-                canAccess ? room.getOwner().getEmail() : null
-        );
+                canAccess ? room.getOwner().getEmail() : null);
 
         return ResponseEntity.ok(response);
     }
@@ -99,8 +99,7 @@ public class RoomController {
                         user.getUserName(),
                         user.getColor(),
                         user.getSessionId(),
-                        user.getJoinedAt()
-                ))
+                        user.getJoinedAt()))
                 .toList();
         return ResponseEntity.ok(response);
     }
@@ -119,8 +118,7 @@ public class RoomController {
     @PutMapping("/{roomId}")
     public ResponseEntity<RoomInfoResponse> updateRoom(
             @PathVariable String roomId,
-            @Valid @RequestBody RoomUpdateRequest request
-    ) {
+            @Valid @RequestBody RoomUpdateRequest request) {
         var currentUser = authService.getCurrentUser();
         Room updatedRoom = roomService.updateRoom(roomId, currentUser, request.getName());
 
@@ -132,8 +130,7 @@ public class RoomController {
                 updatedRoom.getCreatedAt(),
                 updatedRoom.isFull(),
                 updatedRoom.getOwner().getId(),
-                updatedRoom.getOwner().getEmail()
-        );
+                updatedRoom.getOwner().getEmail());
 
         broadcastRoomUpdate(roomId, "updated", updatedRoom.getName());
         return ResponseEntity.ok(response);
@@ -146,10 +143,14 @@ public class RoomController {
     @DeleteMapping("/{roomId}")
     public ResponseEntity<Void> deleteRoom(@PathVariable String roomId) {
         var currentUser = authService.getCurrentUser();
-        // FIX: chatService.deleteByRoom_RoomId was called here before roomService.deleteRoom,
-        // as two separate transactions. If roomService.deleteRoom failed, chat messages were
-        // already gone with no rollback. Also, calling a @Modifying delete outside of any
-        // transaction caused "No EntityManager with actual transaction available" errors.
+        // FIX: chatService.deleteByRoom_RoomId was called here before
+        // roomService.deleteRoom,
+        // as two separate transactions. If roomService.deleteRoom failed, chat messages
+        // were
+        // already gone with no rollback. Also, calling a @Modifying delete outside of
+        // any
+        // transaction caused "No EntityManager with actual transaction available"
+        // errors.
         // The clean fix: move chat deletion inside RoomService.deleteRoom so the entire
         // teardown (active users, Redis, board states, chat, participants, room) is one
         // atomic transaction. ChatService is now only called from within RoomService.
@@ -176,8 +177,7 @@ public class RoomController {
                     "type", "room_update",
                     "event", eventType,
                     "roomId", roomId,
-                    "roomName", roomName != null ? roomName : ""
-            );
+                    "roomName", roomName != null ? roomName : "");
             messagingTemplate.convertAndSend("/topic/room/" + roomId + "/updates", (Object) message);
             messagingTemplate.convertAndSend("/topic/rooms/list", (Object) message);
         } catch (Exception e) {
@@ -185,4 +185,3 @@ public class RoomController {
         }
     }
 }
-

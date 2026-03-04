@@ -187,12 +187,12 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
           wsService.subscribe(`/topic/room/${roomId}/chat`, msg => handlersRef.current.handleChatMessage?.(msg));
         };
 
-        // Subscribe topics before JOIN to avoid missing the first user-list broadcast.
-        subscribeRoomTopics();
-
         wsService.subscribe('/user/queue/join-confirmation', msg => {
           if (msg?.sessionId) {
             setMySessionId(msg.sessionId);
+            // Subscribe to room topics only after server confirms room join.
+            // JwtChannelInterceptor blocks /topic/room/* subscriptions for non-members.
+            subscribeRoomTopics();
             (async () => {
               try {
                 const activeUsers = await api.getActiveUsers(roomId);
