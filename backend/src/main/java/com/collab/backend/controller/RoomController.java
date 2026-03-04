@@ -98,6 +98,7 @@ public class RoomController {
                 .map(user -> new ActiveUserResponse(
                         user.getUserName(),
                         user.getColor(),
+                        user.getSessionId(),
                         user.getJoinedAt()
                 ))
                 .toList();

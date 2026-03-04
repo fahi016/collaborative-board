@@ -1,10 +1,10 @@
-﻿import { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { logger } from '../utils/logger';
 
 const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const DISCONNECTED_GRACE_MS = 8000;
 
 const resolveIceServers = () => {
-  
   const raw = import.meta.env.VITE_ICE_SERVERS;
   if (!raw) return DEFAULT_ICE_SERVERS;
 
@@ -23,13 +23,31 @@ const resolveIceServers = () => {
 };
 
 const ICE_SERVERS = resolveIceServers();
+const toAudioElementId = (sessionId) => `remote-audio-${sessionId}`;
 
 export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({});
   const isMutedRef = useRef(false);
   const blockedAudioElementsRef = useRef(new Set());
+  const remoteAudioElementsRef = useRef({});
+  const pendingIceCandidatesRef = useRef({});
+  const makingOfferRef = useRef({});
+  const ignoreOfferRef = useRef({});
+  const disconnectTimersRef = useRef({});
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+
+  const clearDisconnectTimer = useCallback((sessionId) => {
+    const timer = disconnectTimersRef.current[sessionId];
+    if (!timer) return;
+    clearTimeout(timer);
+    delete disconnectTimersRef.current[sessionId];
+  }, []);
+
+  const isPolitePeer = useCallback((remoteSessionId) => {
+    if (!mySessionId || !remoteSessionId) return true;
+    return mySessionId > remoteSessionId;
+  }, [mySessionId]);
 
   const markAudioBlocked = useCallback((audioEl) => {
     if (!audioEl) return;
@@ -42,6 +60,73 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
     blockedAudioElementsRef.current.delete(audioEl);
     if (blockedAudioElementsRef.current.size === 0) {
       setAutoplayBlocked(false);
+    }
+  }, []);
+
+  const removeRemoteAudioElement = useCallback((remoteSessionId) => {
+    const known = remoteAudioElementsRef.current[remoteSessionId];
+    const audioEl = known || document.getElementById(toAudioElementId(remoteSessionId));
+    if (!audioEl) return;
+
+    clearAudioBlocked(audioEl);
+    audioEl.pause?.();
+    audioEl.srcObject = null;
+
+    if (audioEl.dataset.managedByVoiceHook === 'true') {
+      audioEl.remove();
+    }
+
+    delete remoteAudioElementsRef.current[remoteSessionId];
+  }, [clearAudioBlocked]);
+
+  const ensureRemoteAudioElement = useCallback((remoteSessionId) => {
+    const id = toAudioElementId(remoteSessionId);
+    const existing = remoteAudioElementsRef.current[remoteSessionId] || document.getElementById(id);
+    if (existing) {
+      remoteAudioElementsRef.current[remoteSessionId] = existing;
+      return existing;
+    }
+
+    const audio = document.createElement('audio');
+    audio.id = id;
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.className = 'hidden';
+    audio.dataset.managedByVoiceHook = 'true';
+    document.body.appendChild(audio);
+    remoteAudioElementsRef.current[remoteSessionId] = audio;
+    return audio;
+  }, []);
+
+  const addLocalTracksToPeer = useCallback((pc, remoteSessionId) => {
+    if (!pc || !localStreamRef.current) return;
+
+    const senderTrackIds = new Set(
+      pc.getSenders()
+        .map((sender) => sender.track?.id)
+        .filter(Boolean)
+    );
+
+    localStreamRef.current.getTracks().forEach((track) => {
+      if (senderTrackIds.has(track.id)) return;
+      pc.addTrack(track, localStreamRef.current);
+      logger.debug('Added local track to peer:', remoteSessionId, track.kind);
+    });
+  }, []);
+
+  const flushPendingIceCandidates = useCallback(async (sessionId, pc) => {
+    const pending = pendingIceCandidatesRef.current[sessionId];
+    if (!pending || pending.length === 0) return;
+
+    logger.debug('Flushing queued ICE candidates for', sessionId, 'count=', pending.length);
+    delete pendingIceCandidatesRef.current[sessionId];
+
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        logger.warn('Failed to add queued ICE candidate for', sessionId, err);
+      }
     }
   }, []);
 
@@ -75,6 +160,10 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
         video: false,
       });
 
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !isMutedRef.current;
+      });
+
       localStreamRef.current = stream;
       logger.debug('Microphone access granted', stream.getAudioTracks());
       return stream;
@@ -85,13 +174,24 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
   }, []);
 
   const closePeer = useCallback((sessionId) => {
+    clearDisconnectTimer(sessionId);
+
     const pc = peerConnectionsRef.current[sessionId];
     if (pc) {
       logger.debug('Closing peer connection:', sessionId);
+      pc.ontrack = null;
+      pc.onicecandidate = null;
+      pc.onconnectionstatechange = null;
+      pc.oniceconnectionstatechange = null;
       pc.close();
       delete peerConnectionsRef.current[sessionId];
     }
-  }, []);
+
+    delete pendingIceCandidatesRef.current[sessionId];
+    delete makingOfferRef.current[sessionId];
+    delete ignoreOfferRef.current[sessionId];
+    removeRemoteAudioElement(sessionId);
+  }, [clearDisconnectTimer, removeRemoteAudioElement]);
 
   const createPeerConnection = useCallback(
     (remoteSessionId) => {
@@ -108,17 +208,12 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
       logger.debug('Creating new peer connection:', remoteSessionId);
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current);
-          logger.debug('Added local track to peer:', remoteSessionId, track.kind);
-        });
-      }
+      addLocalTracksToPeer(pc, remoteSessionId);
 
       pc.ontrack = (e) => {
         logger.debug('Track received from', remoteSessionId, e.streams[0]);
 
-        const audio = document.getElementById(`remote-audio-${remoteSessionId}`);
+        const audio = ensureRemoteAudioElement(remoteSessionId);
         if (audio && e.streams[0]) {
           audio.srcObject = e.streams[0];
 
@@ -131,8 +226,6 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
               markAudioBlocked(audio);
               logger.warn('Autoplay blocked for', remoteSessionId, err);
             });
-        } else {
-          logger.warn('Audio element not found for', remoteSessionId);
         }
       };
 
@@ -151,12 +244,25 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
         logger.debug('Connection state with', remoteSessionId, '->', pc.connectionState);
 
         if (pc.connectionState === 'connected') {
+          clearDisconnectTimer(remoteSessionId);
           logger.debug('Peer connected:', remoteSessionId);
-        } else if (
-          pc.connectionState === 'failed' ||
-          pc.connectionState === 'disconnected'
-        ) {
-          logger.warn('Peer connection failed/disconnected:', remoteSessionId);
+        } else if (pc.connectionState === 'disconnected') {
+          if (!disconnectTimersRef.current[remoteSessionId]) {
+            disconnectTimersRef.current[remoteSessionId] = setTimeout(() => {
+              const currentPc = peerConnectionsRef.current[remoteSessionId];
+              if (!currentPc) return;
+              if (
+                currentPc.connectionState === 'disconnected' ||
+                currentPc.connectionState === 'failed' ||
+                currentPc.connectionState === 'closed'
+              ) {
+                logger.warn('Peer remained disconnected, closing:', remoteSessionId);
+                closePeer(remoteSessionId);
+              }
+            }, DISCONNECTED_GRACE_MS);
+          }
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          logger.warn('Peer connection failed/closed:', remoteSessionId);
           closePeer(remoteSessionId);
         }
       };
@@ -168,7 +274,16 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
       peerConnectionsRef.current[remoteSessionId] = pc;
       return pc;
     },
-    [mySessionId, onVoiceSignal, closePeer, clearAudioBlocked, markAudioBlocked]
+    [
+      mySessionId,
+      onVoiceSignal,
+      closePeer,
+      clearAudioBlocked,
+      markAudioBlocked,
+      addLocalTracksToPeer,
+      ensureRemoteAudioElement,
+      clearDisconnectTimer,
+    ]
   );
 
   const startVoice = useCallback(async () => {
@@ -189,8 +304,14 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
       const pc = createPeerConnection(user.sessionId);
       if (!pc) continue;
 
+      makingOfferRef.current[user.sessionId] = true;
       try {
+        addLocalTracksToPeer(pc, user.sessionId);
         const offer = await pc.createOffer({ offerToReceiveAudio: true });
+        if (pc.signalingState !== 'stable') {
+          logger.warn('Skipping unstable offer for', user.sessionId, pc.signalingState);
+          continue;
+        }
         await pc.setLocalDescription(offer);
 
         logger.debug('Sending offer to', user.sessionId);
@@ -201,9 +322,11 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
         });
       } catch (err) {
         logger.error('Failed to create offer for', user.sessionId, err);
+      } finally {
+        makingOfferRef.current[user.sessionId] = false;
       }
     }
-  }, [users, mySessionId, getLocalStream, createPeerConnection, onVoiceSignal]);
+  }, [users, mySessionId, getLocalStream, createPeerConnection, onVoiceSignal, addLocalTracksToPeer]);
 
   const handleIncomingSignal = useCallback(
     async (msg) => {
@@ -231,15 +354,29 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
           if (!localStreamRef.current) {
             logger.debug('Getting local stream before answering');
             await getLocalStream();
-
-            if (localStreamRef.current) {
-              localStreamRef.current.getTracks().forEach((track) => {
-                pc.addTrack(track, localStreamRef.current);
-              });
-            }
           }
 
-          await pc.setRemoteDescription({ type: 'offer', sdp: payload });
+          addLocalTracksToPeer(pc, fromSessionId);
+
+          const offerCollision =
+            Boolean(makingOfferRef.current[fromSessionId]) || pc.signalingState !== 'stable';
+          ignoreOfferRef.current[fromSessionId] = !isPolitePeer(fromSessionId) && offerCollision;
+
+          if (ignoreOfferRef.current[fromSessionId]) {
+            logger.warn('Ignoring offer collision from', fromSessionId);
+            return;
+          }
+
+          if (offerCollision && pc.signalingState === 'have-local-offer') {
+            logger.warn('Offer collision detected with', fromSessionId, '- rolling back local offer');
+            await Promise.all([
+              pc.setLocalDescription({ type: 'rollback' }),
+              pc.setRemoteDescription({ type: 'offer', sdp: payload }),
+            ]);
+          } else {
+            await pc.setRemoteDescription({ type: 'offer', sdp: payload });
+          }
+          await flushPendingIceCandidates(fromSessionId, pc);
 
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
@@ -254,23 +391,47 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
           logger.debug('Handling answer from', fromSessionId);
 
           await pc.setRemoteDescription({ type: 'answer', sdp: payload });
+          await flushPendingIceCandidates(fromSessionId, pc);
           logger.debug('Answer applied for', fromSessionId);
         } else if (type === 'ice-candidate') {
           logger.debug('Handling ICE candidate from', fromSessionId);
 
+          const candidate = typeof payload === 'string' ? JSON.parse(payload) : payload;
+          if (!candidate) return;
+
+          if (ignoreOfferRef.current[fromSessionId]) {
+            logger.debug('Skipping ICE candidate for ignored offer from', fromSessionId);
+            return;
+          }
+
+          if (!pc.remoteDescription || !pc.remoteDescription.type) {
+            const existing = pendingIceCandidatesRef.current[fromSessionId] || [];
+            existing.push(candidate);
+            pendingIceCandidatesRef.current[fromSessionId] = existing;
+            logger.debug('Queued ICE candidate until remote description is set for', fromSessionId);
+            return;
+          }
+
           try {
-            const candidate = typeof payload === 'string' ? JSON.parse(payload) : payload;
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
             logger.debug('ICE candidate added for', fromSessionId);
           } catch (err) {
-            logger.warn('Failed to add ICE candidate:', err);
+            logger.warn('Failed to add ICE candidate for', fromSessionId, err);
           }
         }
       } catch (err) {
         logger.error('Error handling signal from', fromSessionId, err);
       }
     },
-    [mySessionId, createPeerConnection, onVoiceSignal, getLocalStream]
+    [
+      mySessionId,
+      createPeerConnection,
+      onVoiceSignal,
+      getLocalStream,
+      addLocalTracksToPeer,
+      isPolitePeer,
+      flushPendingIceCandidates,
+    ]
   );
 
   const setMuted = useCallback((muted) => {
@@ -284,7 +445,7 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
   }, []);
 
   const leaveVoice = useCallback(() => {
-    logger.debug('Leaving voice chat');
+    logger.debug('Leaving voice chat for room', roomId);
 
     Object.keys(peerConnectionsRef.current).forEach((sid) => {
       closePeer(sid);
@@ -296,11 +457,30 @@ export function useVoiceRoom(roomId, users, mySessionId, onVoiceSignal) {
     });
     localStreamRef.current = null;
 
+    Object.keys(remoteAudioElementsRef.current).forEach((sid) => {
+      removeRemoteAudioElement(sid);
+    });
+
     blockedAudioElementsRef.current.clear();
     setAutoplayBlocked(false);
 
     logger.debug('Left voice chat');
-  }, [closePeer]);
+  }, [closePeer, roomId, removeRemoteAudioElement]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hasTurn = ICE_SERVERS.some((server) => {
+      const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+      return urls.some((url) => typeof url === 'string' && url.startsWith('turn:'));
+    });
+    const host = window.location?.hostname || '';
+    const localHost = host === 'localhost' || host === '127.0.0.1';
+    if (!hasTurn && !localHost) {
+      logger.warn(
+        'Voice is running without TURN servers. Some users behind strict NAT/firewalls may have intermittent or one-way audio.'
+      );
+    }
+  }, []);
 
   useEffect(() => {
     return () => {

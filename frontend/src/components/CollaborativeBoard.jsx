@@ -187,23 +187,26 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
           wsService.subscribe(`/topic/room/${roomId}/chat`, msg => handlersRef.current.handleChatMessage?.(msg));
         };
 
+        // Subscribe topics before JOIN to avoid missing the first user-list broadcast.
+        subscribeRoomTopics();
+
         wsService.subscribe('/user/queue/join-confirmation', msg => {
           if (msg?.sessionId) {
             setMySessionId(msg.sessionId);
-            subscribeRoomTopics();
             (async () => {
               try {
                 const activeUsers = await api.getActiveUsers(roomId);
                 if (!active) return;
-                setUsers(
-                  Array.isArray(activeUsers)
-                    ? activeUsers.map(u => ({
+                setUsers((prev) => {
+                  const byName = new Map(prev.map((u) => [u.userName, u.sessionId]));
+                  return Array.isArray(activeUsers)
+                    ? activeUsers.map((u) => ({
                         userName: u.userName,
                         color: u.color,
-                        sessionId: null,
+                        sessionId: u.sessionId ?? byName.get(u.userName) ?? null,
                       }))
-                    : [],
-                );
+                    : prev;
+                });
               } catch (err) {
                 logger.error('Failed to sync active users after join:', err);
               }
@@ -259,10 +262,6 @@ function CollaborativeBoard({ roomId, userName, userColor, onExit }) {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: '#0a0a0a' }}>
-      {voiceEnabled && users.filter(u => u.sessionId !== mySessionId).map(u => (
-        <audio key={u.sessionId} id={`remote-audio-${u.sessionId}`} autoPlay playsInline className="hidden" aria-label={`Audio ${u.userName}`} />
-      ))}
-
       <TopBar
         roomId={roomId} roomName={roomName} userName={userName} onExit={handleExit}
         connected={connected} voiceEnabled={voiceEnabled} onJoinVoice={handleJoinVoice}

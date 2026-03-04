@@ -10,5 +10,6 @@ import java.time.LocalDateTime;
 public class ActiveUserResponse {
     private String userName;
     private String color;
+    private String sessionId;
     private LocalDateTime joinedAt;
 }
