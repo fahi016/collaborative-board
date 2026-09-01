@@ -2,6 +2,8 @@
 
 Collaborative Board is a real-time multi-user whiteboard platform where teams can draw, chat, and coordinate in shared rooms.
 
+Live demo: https://coboardapp.netlify.app/
+
 ![alt text](image.png)
 
 ![alt text](image-1.png)
